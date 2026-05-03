@@ -1,0 +1,239 @@
+services:
+  # ── Infrastructure ───────────────────────────────────────────────────────────
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: solAgent
+      POSTGRES_PASSWORD: devpassword
+      POSTGRES_DB: solAgent_devnet
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U solAgent -d solAgent_devnet']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ── Tether QVAC HTTP server (OpenAI-compatible) — https://docs.qvac.tether.io/http-server/
+  # Model alias must match docker/qvac/qvac.config.json and QVAC_MODEL in .env.devnet
+  qvac:
+    build:
+      context: .
+      dockerfile: docker/qvac/Dockerfile
+    restart: unless-stopped
+    volumes:
+      - qvac_cache:/root/.qvac
+    ports:
+      - '11434:11434'
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:11434/v1/models >/dev/null 2>&1 || exit 1']
+      interval: 20s
+      timeout: 15s
+      retries: 15
+      start_period: 120s
+
+  # ── Prisma migration — runs once, exits 0, then services start ───────────────
+
+  migrate:
+    build:
+      context: .
+      dockerfile: shared/Dockerfile.migrate
+    env_file:
+      - .env.devnet
+    environment:
+      DATABASE_URL: postgresql://solAgent:devpassword@postgres:5432/solAgent_devnet
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+
+  # ── Services ─────────────────────────────────────────────────────────────────
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: services/api-gateway/Dockerfile
+    restart: unless-stopped
+    ports:
+      - '4000:4000'
+    environment:
+      PORT: '4000'
+      NODE_ENV: production
+      DATABASE_URL: postgresql://solAgent:devpassword@postgres:5432/solAgent_devnet
+      REDIS_URL: redis://redis:6379
+    env_file:
+      - .env.devnet
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:4000/health || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  rule-engine:
+    build:
+      context: .
+      dockerfile: services/rule-engine/Dockerfile
+    restart: unless-stopped
+    ports:
+      - '4001:4001'
+    environment:
+      PORT: '4001'
+      NODE_ENV: production
+      DATABASE_URL: postgresql://solAgent:devpassword@postgres:5432/solAgent_devnet
+      REDIS_URL: redis://redis:6379
+      QVAC_BASE_URL: http://qvac:11434
+    env_file:
+      - .env.devnet
+    depends_on:
+      qvac:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:4001/health || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  event-listener:
+    build:
+      context: .
+      dockerfile: services/event-listener/Dockerfile
+    restart: unless-stopped
+    ports:
+      - '4002:4002'
+    environment:
+      PORT: '4002'
+      NODE_ENV: production
+      REDIS_URL: redis://redis:6379
+    env_file:
+      - .env.devnet
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:4002/health || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  condition-evaluator:
+    build:
+      context: .
+      dockerfile: services/condition-evaluator/Dockerfile
+    restart: unless-stopped
+    ports:
+      - '4003:4003'
+    environment:
+      PORT: '4003'
+      NODE_ENV: production
+      DATABASE_URL: postgresql://solAgent:devpassword@postgres:5432/solAgent_devnet
+      REDIS_URL: redis://redis:6379
+    env_file:
+      - .env.devnet
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:4003/health || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  execution-engine:
+    build:
+      context: .
+      dockerfile: services/execution-engine/Dockerfile
+    restart: unless-stopped
+    ports:
+      - '4004:4004'
+    environment:
+      PORT: '4004'
+      NODE_ENV: production
+      DATABASE_URL: postgresql://solAgent:devpassword@postgres:5432/solAgent_devnet
+      REDIS_URL: redis://redis:6379
+    env_file:
+      - .env.devnet
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:4004/health || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  audit-indexer:
+    build:
+      context: .
+      dockerfile: services/audit-indexer/Dockerfile
+    restart: unless-stopped
+    ports:
+      - '4005:4005'
+    environment:
+      PORT: '4005'
+      NODE_ENV: production
+      DATABASE_URL: postgresql://solAgent:devpassword@postgres:5432/solAgent_devnet
+      REDIS_URL: redis://redis:6379
+    env_file:
+      - .env.devnet
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:4005/health || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+volumes:
+  postgres_data:
+  redis_data:
+  qvac_cache:

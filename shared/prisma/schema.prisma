@@ -1,0 +1,119 @@
+// shared/prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+  // Monorepo: generate into the hoisted node_modules so all workspace packages
+  // can import @prisma/client and get the generated types.
+  output   = "../../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RuleStatus {
+  PENDING_ACTIVATION
+  ACTIVE
+  PAUSED
+  PAUSED_CIRCUIT_BREAKER
+  COMPLETED
+  ARCHIVED
+}
+
+enum ExecStatus {
+  PROCESSING
+  CONFIRMED
+  FAILED
+  DUPLICATE_DISCARDED
+  STALE_CONDITION
+  PRICE_DEVIATION_ABORT
+  CIRCUIT_BREAKER_HALT
+  INSUFFICIENT_FUNDS
+}
+
+model User {
+  id             String        @id @default(uuid())
+  walletPubkey   String        @unique @map("wallet_pubkey")
+  createdAt      DateTime      @default(now()) @map("created_at")
+  lastSeenAt     DateTime?     @map("last_seen_at")
+  dailyLimitUsd  Decimal       @default(1000) @map("daily_limit_usd") @db.Decimal(18, 6)
+  isActive       Boolean       @default(true) @map("is_active")
+  agentWallets   AgentWallet[]
+  rules          Rule[]
+
+  @@map("users")
+}
+
+model AgentWallet {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  pubkey       String   @unique
+  encryptedKey Bytes    @map("encrypted_key")
+  keyIv        Bytes    @map("key_iv")
+  createdAt    DateTime @default(now()) @map("created_at")
+  isActive     Boolean  @default(true) @map("is_active")
+  user         User     @relation(fields: [userId], references: [id])
+  rules        Rule[]
+
+  @@map("agent_wallets")
+}
+
+model Rule {
+  id            String      @id @default(uuid())
+  userId        String      @map("user_id")
+  agentWalletId String      @map("agent_wallet_id")
+  rawInput      String      @map("raw_input")
+  parsedRule    Json        @map("parsed_rule")
+  ruleHash      String      @map("rule_hash")
+  status        RuleStatus  @default(PENDING_ACTIVATION)
+  maxAmountUsd  Decimal?    @map("max_amount_usd") @db.Decimal(18, 6)
+  firesToday    Int         @default(0) @map("fires_today")
+  maxFiresDay   Int         @default(10) @map("max_fires_day")
+  createdAt     DateTime    @default(now()) @map("created_at")
+  activatedAt   DateTime?   @map("activated_at")
+  pausedAt      DateTime?   @map("paused_at")
+  pauseReason   String?     @map("pause_reason")
+  user          User        @relation(fields: [userId], references: [id])
+  agentWallet   AgentWallet @relation(fields: [agentWalletId], references: [id])
+  executions    ExecutionLog[]
+
+  @@map("rules")
+}
+
+model ExecutionLog {
+  id              String     @id @default(uuid())
+  ruleId          String     @map("rule_id")
+  idempotencyKey  String     @unique @map("idempotency_key")
+  status          ExecStatus @default(PROCESSING)
+  triggerEventSig String?    @map("trigger_event_sig")
+  triggerSlot     BigInt?    @map("trigger_slot")
+  txSignature     String?    @map("tx_signature")
+  memoJson        Json?      @map("memo_json")
+  jupiterPrice    Decimal?   @map("jupiter_price") @db.Decimal(18, 6)
+  pythPrice       Decimal?   @map("pyth_price") @db.Decimal(18, 6)
+  priceDeviation  Decimal?   @map("price_deviation") @db.Decimal(8, 4)
+  errorCode       String?    @map("error_code")
+  errorDetail     String?    @map("error_detail")
+  createdAt       DateTime   @default(now()) @map("created_at")
+  confirmedAt     DateTime?  @map("confirmed_at")
+  rule            Rule       @relation(fields: [ruleId], references: [id])
+
+  @@map("execution_log")
+}
+
+model AuditEvent {
+  id             String   @id @default(uuid())
+  walletPubkey   String   @map("wallet_pubkey")
+  txSignature    String?  @unique @map("tx_signature")
+  ruleId         String?  @map("rule_id")
+  eventType      String   @default("EXECUTION_CONFIRMED") @map("event_type")
+  payload        Json     @default("{}") @map("payload")
+  isAnomalous    Boolean  @default(false) @map("is_anomalous")
+  idempotencyKey String?  @unique @map("idempotency_key")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([walletPubkey])
+  @@index([ruleId])
+  @@map("audit_events")
+}

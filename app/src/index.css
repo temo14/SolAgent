@@ -1,0 +1,67 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,100..900;1,100..900&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Outfit:wght@100..900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Outfit", var(--font-sans);
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  
+  --color-brand-bg: #F8F9FA;
+  --color-brand-ink: #0A0A0A;
+  --color-brand-safe: #10B981;
+  --color-brand-wait: #F59E0B;
+  --color-brand-stop: #EF4444;
+  --color-brand-accent: #6366F1;
+  
+  --shadow-brand-soft: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+  --shadow-brand-heavy: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+}
+
+@layer base {
+  * {
+    @apply border-black/5;
+  }
+  
+  body {
+    @apply bg-brand-bg text-brand-ink font-sans antialiased selection:bg-brand-accent/20 selection:text-brand-accent;
+  }
+
+  h1, h2, h3, h4 {
+    @apply font-display tracking-tight;
+  }
+}
+
+.glass {
+  @apply bg-white/70 backdrop-blur-xl border border-white/40 shadow-brand-soft;
+}
+
+.phantom-card {
+  @apply bg-white rounded-[44px] border border-black/5 p-10 transition-all duration-300 hover:shadow-brand-heavy hover:-translate-y-1;
+}
+
+.modern-btn {
+  @apply inline-flex items-center justify-center gap-2 px-6 py-3 rounded-full font-bold text-[11px] uppercase tracking-[0.1em] transition-all active:scale-95;
+}
+
+.modern-btn-primary {
+  @apply bg-brand-ink text-white hover:bg-black/90 shadow-lg shadow-black/10;
+}
+
+.modern-btn-secondary {
+  @apply bg-white border border-black/5 text-black hover:bg-black/5;
+}
+
+.shimmer {
+  @apply relative overflow-hidden;
+}
+
+.shimmer::after {
+  content: "";
+  @apply absolute inset-0 -translate-x-full;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  animation: shimmer-anim 2s infinite;
+}
+
+@keyframes shimmer-anim {
+  100% { transform: translateX(100%); }
+}

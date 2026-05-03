@@ -1,0 +1,38 @@
+# Monorepo Docker build context (compose: context: .) — keep builds small and stable
+.git
+.github
+**/.git
+
+# Never send host node trees into the daemon
+node_modules
+**/node_modules
+app/node_modules
+shared/node_modules
+
+# Build outputs
+**/dist
+target
+**/*.rs.bk
+test-ledger
+.anchor
+
+# Frontend / Anchor — not used by service Dockerfiles
+app
+programs
+
+# Large exports / caches (not needed for images)
+solagent-full-sources.txt
+**/all-sources.txt
+coverage
+.vscode
+.idea
+
+# Local env (secrets); compose injects via env_file at runtime
+.env
+.env.*
+!.env.devnet.example
+
+# OS / misc
+.DS_Store
+*.log
+npm-debug.log*

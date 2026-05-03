@@ -1,0 +1,20 @@
+.anchor
+.DS_Store
+target
+**/*.rs.bk
+node_modules
+test-ledger
+.yarn
+
+# Services build output
+services/*/dist
+shared/dist
+
+# Env files (never commit real secrets)
+.env.devnet
+.env.mainnet
+.env.local
+.env
+
+# Prisma generated client
+shared/node_modules
