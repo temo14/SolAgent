@@ -24,7 +24,7 @@ SOLANA_NETWORK=devnet
 # ── Helius ────────────────────────────────────────────────────────────────────
 HELIUS_API_KEY=9a99ad54-b991-4933-9d50-d9e37847e159
 # HMAC secret for webhook signature verification — must match what you set in Helius dashboard
-HELIUS_WEBHOOK_SECRET=REPLACE_ME_32_CHAR_MINIMUM
+HELIUS_WEBHOOK_SECRET=1fe667cefcce73796ba8df57232df6d00d878f6a87e2a07c0f42273dd5b87035
 # Public URL of your event-listener service reachable by Helius (set after deploy/ngrok)
 HELIUS_WEBHOOK_URL=https://REPLACE_ME.ngrok.io/webhooks/helius
 
@@ -33,13 +33,13 @@ JUPITER_BASE_URL=https://quote-api.jup.ag/v6
 
 # ── Auth (SIWS + JWT) ─────────────────────────────────────────────────────────
 # Generate: openssl rand -hex 32
-JWT_SECRET=REPLACE_ME_32_CHAR_MINIMUM_SECRET
+JWT_SECRET=75e05f78bf989f91e88ce266f6d198b185dbe0aa88352065ddcbbb0a08d0e976
 JWT_EXPIRY=86400
 
 # ── Agent Keypair Encryption ──────────────────────────────────────────────────
 # 32-byte hex master key for HKDF derivation. Generate: openssl rand -hex 32
 # NEVER commit a real value. Loss of this key = loss of all agent wallet keypairs.
-AGENT_KEY_MASTER=REPLACE_ME_64_HEX_CHARS
+AGENT_KEY_MASTER=08d67383b6eca9a265ea781a602978394ff155ad1a9495d4beacff8bf18e5a9d
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
 # React dev server URL (Vite default)
@@ -128,6 +128,120 @@ NODE_ENV=development
 
 
 ################################################################################
+# FILE: .env.localnet
+################################################################################
+# ── Docker Compose: localnet profile ──────────────────────────────────────────
+# Same service secrets as .env.devnet (Helius, JWT, agent master, webhook) so you
+# can test without juggling keys. Database name is separate from devnet.
+# Solana RPC below points at devnet Helius (same as dev) — swap to host.docker.internal:8899
+# + SOLANA_NETWORK=localnet only if you run a local validator.
+
+# ── Database ──────────────────────────────────────────────────────────────────
+DATABASE_URL=postgresql://solAgent:devpassword@postgres:5432/solAgent_localnet
+
+# ── Redis ─────────────────────────────────────────────────────────────────────
+REDIS_URL=redis://redis:6379
+
+# ── Tether QVAC ───────────────────────────────────────────────────────────────
+QVAC_BASE_URL=http://qvac:11434
+QVAC_MODEL=solagent-parser
+# QVAC_API_KEY=
+
+# ── Solana (same devnet RPC as .env.devnet for unified local testing) ────────
+SOLANA_RPC_URL=https://devnet.helius-rpc.com/?api-key=9a99ad54-b991-4933-9d50-d9e37847e159
+SOLANA_RPC_FALLBACK=https://api.devnet.solana.com
+SOLANA_NETWORK=devnet
+
+# ── Helius (same keys as .env.devnet) ─────────────────────────────────────────
+HELIUS_API_KEY=9a99ad54-b991-4933-9d50-d9e37847e159
+HELIUS_WEBHOOK_SECRET=1fe667cefcce73796ba8df57232df6d00d878f6a87e2a07c0f42273dd5b87035
+HELIUS_WEBHOOK_URL=https://REPLACE_ME.ngrok.io/webhooks/helius
+
+# ── Jupiter ───────────────────────────────────────────────────────────────────
+JUPITER_BASE_URL=https://quote-api.jup.ag/v6
+
+# ── Auth (SIWS + JWT) — same as .env.devnet ──────────────────────────────────
+JWT_SECRET=75e05f78bf989f91e88ce266f6d198b185dbe0aa88352065ddcbbb0a08d0e976
+JWT_EXPIRY=86400
+
+# ── Agent keypair encryption — same as .env.devnet ───────────────────────────
+AGENT_KEY_MASTER=08d67383b6eca9a265ea781a602978394ff155ad1a9495d4beacff8bf18e5a9d
+
+# ── CORS ──────────────────────────────────────────────────────────────────────
+CORS_ORIGIN=http://localhost:3000
+
+# ── Pyth ──────────────────────────────────────────────────────────────────────
+PYTH_HERMES_URL=https://hermes.pyth.network
+
+# ── Service ports ─────────────────────────────────────────────────────────────
+API_GATEWAY_PORT=4000
+RULE_ENGINE_PORT=4001
+EVENT_LISTENER_PORT=4002
+CONDITION_EVALUATOR_PORT=4003
+EXECUTION_ENGINE_PORT=4004
+AUDIT_INDEXER_PORT=4005
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+LOG_LEVEL=debug
+NODE_ENV=development
+
+
+################################################################################
+# FILE: .env.mainnet
+################################################################################
+# ── Database ──────────────────────────────────────────────────────────────────
+DATABASE_URL=postgresql://solAgent:devpassword@postgres:5432/solAgent_mainnet
+
+# ── Redis ─────────────────────────────────────────────────────────────────────
+REDIS_URL=redis://redis:6379
+
+# ── Tether QVAC ───────────────────────────────────────────────────────────────
+QVAC_BASE_URL=http://qvac:11434
+QVAC_MODEL=solagent-parser
+# QVAC_API_KEY=
+
+# ── Solana (mainnet-beta) ──────────────────────────────────────────────────────
+SOLANA_RPC_URL=https://mainnet.helius-rpc.com/?api-key=REPLACE_ME
+SOLANA_RPC_FALLBACK=https://api.mainnet-beta.solana.com
+SOLANA_NETWORK=mainnet-beta
+
+# ── Helius ────────────────────────────────────────────────────────────────────
+HELIUS_API_KEY=REPLACE_ME
+HELIUS_WEBHOOK_SECRET=REPLACE_ME
+HELIUS_WEBHOOK_URL=https://REPLACE_ME.ngrok.io/webhooks/helius
+
+# ── Jupiter ───────────────────────────────────────────────────────────────────
+JUPITER_BASE_URL=https://quote-api.jup.ag/v6
+
+# ── Auth (SIWS + JWT) ─────────────────────────────────────────────────────────
+# Generate: openssl rand -hex 32
+JWT_SECRET=REPLACE_ME
+JWT_EXPIRY=86400
+
+# ── Agent Keypair Encryption ──────────────────────────────────────────────────
+# NEVER commit a real value. Loss = loss of all agent wallet keypairs.
+AGENT_KEY_MASTER=REPLACE_ME
+
+# ── CORS ──────────────────────────────────────────────────────────────────────
+CORS_ORIGIN=https://REPLACE_ME_YOUR_PRODUCTION_DOMAIN
+
+# ── Pyth Benchmarks ───────────────────────────────────────────────────────────
+PYTH_HERMES_URL=https://hermes.pyth.network
+
+# ── Service Ports ─────────────────────────────────────────────────────────────
+API_GATEWAY_PORT=4000
+RULE_ENGINE_PORT=4001
+EVENT_LISTENER_PORT=4002
+CONDITION_EVALUATOR_PORT=4003
+EXECUTION_ENGINE_PORT=4004
+AUDIT_INDEXER_PORT=4005
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+LOG_LEVEL=warn
+NODE_ENV=production
+
+
+################################################################################
 # FILE: app/package.json
 ################################################################################
 {
@@ -136,8 +250,11 @@ NODE_ENV=development
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
+    "dev": "vite --port 3000",
+    "dev:mainnet": "vite --port 3000 --mode mainnet",
+    "dev:localnet": "vite --port 3000 --mode localnet",
+    "build": "tsc && vite build",
+    "build:mainnet": "vite build --mode mainnet",
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit"
@@ -145,6 +262,10 @@ NODE_ENV=development
   "dependencies": {
     "@solana/wallet-adapter-base": "^0.9.23",
     "@solana/wallet-adapter-phantom": "^0.9.24",
+    "@solana/wallet-adapter-react": "^0.15.39",
+    "@solana/wallet-adapter-react-ui": "^0.9.39",
+    "@solana/wallet-adapter-walletconnect": "^0.1.21",
+    "@solana/web3.js": "^1.98.4",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
     "lucide-react": "^0.546.0",
@@ -263,12 +384,12 @@ function AuthenticatedApp() {
           onClick={() => setActiveView('dashboard')}
         >
           <div className="w-12 h-12 rounded-[18px] bg-brand-ink flex items-center justify-center text-white font-bold text-2xl transition-transform group-hover:rotate-6 shadow-xl shadow-black/10">
-            A
+            S
           </div>
           <div className="flex flex-col -space-y-1">
-            <span className="text-2xl font-black tracking-tighter">AURA</span>
+            <span className="text-2xl font-black tracking-tighter">SolAgent</span>
             <span className="text-[10px] font-bold tracking-[0.4em] text-brand-safe leading-none">
-              SECURE AGENT
+              VERIFIABLE AI WALLET
             </span>
           </div>
         </div>
@@ -656,12 +777,71 @@ export const AuditCard = ({ entry, isExpanded, onToggle }: AuditCardProps) => {
 ################################################################################
 # FILE: app/src/components/auth/ConnectWallet.tsx
 ################################################################################
+import { useEffect, useRef } from 'react';
 import { motion } from 'motion/react';
-import { Fingerprint, ShieldCheck, AlertTriangle, Loader2, ExternalLink } from 'lucide-react';
+import { Fingerprint, ShieldCheck, AlertTriangle, Loader2, Smartphone, Puzzle } from 'lucide-react';
+import { useWallet } from '@solana/wallet-adapter-react';
+import type { WalletName } from '@solana/wallet-adapter-base';
+import { WalletConnectWalletName } from '@solana/wallet-adapter-walletconnect';
+import { PhantomWalletName } from '@solana/wallet-adapter-phantom';
 import { useAuth } from '../../context/AuthContext';
 
+const WC_CONFIGURED = Boolean(
+  (import.meta.env.VITE_WALLETCONNECT_PROJECT_ID as string | undefined)?.trim(),
+);
+
 export function ConnectWallet() {
-  const { connect, isConnecting, error, clearError } = useAuth();
+  const {
+    select,
+    connect: walletConnect,
+    disconnect: walletDisconnect,
+    wallet,
+    connected,
+    publicKey,
+    connecting,
+  } = useWallet();
+
+  const { isSigning, error, signIn, clearError } = useAuth();
+
+  /**
+   * Tracks whether the current wallet selection was triggered by the user
+   * clicking one of our connect buttons. Without this guard the useEffect
+   * below would call walletConnect() on any ambient wallet change.
+   */
+  const pendingConnect = useRef(false);
+
+  // Step 2 of connection: once the adapter object changes (after select()),
+  // open the wallet UI (Phantom popup or WalletConnect QR modal).
+  useEffect(() => {
+    if (!wallet || !pendingConnect.current) return;
+    walletConnect().catch(() => {
+      pendingConnect.current = false;
+    });
+  // wallet.adapter.name is stable once selected — re-run only when the adapter changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wallet?.adapter.name]);
+
+  // Step 3: once the adapter reports connected + publicKey, run the SIWS flow.
+  useEffect(() => {
+    if (!connected || !publicKey) return;
+    void signIn();
+  // signIn identity is stable (useCallback); publicKey/connected come from adapter.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connected, publicKey?.toBase58()]);
+
+  const handleSelect = (name: WalletName) => {
+    clearError();
+    pendingConnect.current = true;
+    select(name);
+  };
+
+  const handleDisconnect = () => {
+    pendingConnect.current = false;
+    walletDisconnect().catch(() => undefined);
+    clearError();
+  };
+
+  const isLoading = connecting || isSigning;
 
   return (
     <div className="min-h-screen bg-brand-bg flex flex-col items-center justify-center px-6">
@@ -678,11 +858,11 @@ export function ConnectWallet() {
             transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
             className="w-20 h-20 rounded-[28px] bg-brand-ink flex items-center justify-center text-white font-black text-4xl mb-6 shadow-2xl shadow-black/20"
           >
-            A
+            S
           </motion.div>
-          <span className="text-3xl font-black tracking-tighter">AURA</span>
+          <span className="text-3xl font-black tracking-tighter">SolAgent</span>
           <span className="text-[10px] font-bold tracking-[0.4em] text-brand-safe mt-1">
-            SECURE AGENT
+            VERIFIABLE AI WALLET
           </span>
         </div>
 
@@ -691,7 +871,8 @@ export function ConnectWallet() {
           <div className="text-center space-y-2">
             <h1 className="text-2xl font-black tracking-tight">Connect Your Wallet</h1>
             <p className="text-sm text-black/40 font-medium leading-relaxed">
-              Sign in with your Solana wallet to access your agent. This will not trigger a transaction.
+              Sign in with your Solana wallet to access your agent. This will not trigger a
+              transaction.
             </p>
           </div>
 
@@ -719,51 +900,75 @@ export function ConnectWallet() {
               className="flex items-start gap-3 p-4 rounded-2xl bg-red-50 border border-red-100"
             >
               <AlertTriangle size={16} className="text-brand-stop mt-0.5 shrink-0" />
-              <div className="space-y-1">
-                <p className="text-xs font-bold text-brand-stop">{error}</p>
-                {error.includes('wallet') && (
-                  <a
-                    href="https://phantom.app"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[10px] font-semibold text-brand-stop/70 flex items-center gap-1 hover:text-brand-stop transition-colors"
-                  >
-                    Get Phantom <ExternalLink size={10} />
-                  </a>
-                )}
-              </div>
+              <p className="text-xs font-bold text-brand-stop flex-1">{error}</p>
               <button
-                onClick={clearError}
-                className="ml-auto text-black/20 hover:text-black transition-colors text-xs font-bold"
+                onClick={() => { clearError(); handleDisconnect(); }}
+                className="text-black/20 hover:text-black transition-colors text-xs font-bold"
               >
                 ✕
               </button>
             </motion.div>
           )}
 
-          {/* Connect button */}
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={() => void connect()}
-            disabled={isConnecting}
-            className="w-full h-16 rounded-[24px] bg-brand-ink text-white font-black text-sm tracking-widest uppercase flex items-center justify-center gap-3 shadow-2xl shadow-black/20 hover:shadow-black/30 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-          >
-            {isConnecting ? (
+          {/* Wallet buttons */}
+          <div className="space-y-3">
+            {/* Browser extension (Phantom / wallet-standard) */}
+            <motion.button
+              whileHover={{ scale: isLoading ? 1 : 1.02 }}
+              whileTap={{ scale: isLoading ? 1 : 0.98 }}
+              onClick={() => handleSelect(PhantomWalletName)}
+              disabled={isLoading}
+              className="w-full h-16 rounded-[24px] bg-brand-ink text-white font-black text-sm tracking-widest uppercase flex items-center justify-center gap-3 shadow-2xl shadow-black/20 hover:shadow-black/30 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {isLoading && wallet?.adapter.name === PhantomWalletName ? (
+                <>
+                  <Loader2 size={20} className="animate-spin" />
+                  {isSigning ? 'Signing In…' : 'Connecting…'}
+                </>
+              ) : (
+                <>
+                  <Puzzle size={20} />
+                  Browser Extension
+                </>
+              )}
+            </motion.button>
+
+            {/* WalletConnect — phone wallet via QR */}
+            {WC_CONFIGURED && (
               <>
-                <Loader2 size={20} className="animate-spin" />
-                Signing In…
-              </>
-            ) : (
-              <>
-                <Fingerprint size={20} />
-                Sign In With Solana
+                <motion.button
+                  whileHover={{ scale: isLoading ? 1 : 1.02 }}
+                  whileTap={{ scale: isLoading ? 1 : 0.98 }}
+                  onClick={() => handleSelect(WalletConnectWalletName)}
+                  disabled={isLoading}
+                  className="w-full h-16 rounded-[24px] bg-white border-2 border-black/10 text-black font-black text-sm tracking-widest uppercase flex items-center justify-center gap-3 hover:border-brand-ink/30 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {isLoading && wallet?.adapter.name === WalletConnectWalletName ? (
+                    <>
+                      <Loader2 size={20} className="animate-spin" />
+                      {isSigning ? 'Signing In…' : 'Scan QR…'}
+                    </>
+                  ) : (
+                    <>
+                      <Smartphone size={20} />
+                      WalletConnect
+                    </>
+                  )}
+                </motion.button>
+                <p className="text-[10px] text-black/45 font-medium leading-relaxed px-1">
+                  After the QR appears: open <span className="font-bold text-black/60">Phantom</span> (or your
+                  wallet) → <span className="font-bold text-black/60">WalletConnect</span> → scan. The phone&apos;s
+                  default camera often shows &quot;no usable data&quot; because it does not open{' '}
+                  <span className="font-mono">wc:</span> links.
+                </p>
               </>
             )}
-          </motion.button>
+          </div>
 
           <p className="text-center text-[10px] text-black/20 font-medium">
-            Works with Phantom, Backpack, Solflare & all wallet-standard wallets
+            {WC_CONFIGURED
+              ? 'Browser extension, or connect a mobile wallet via WalletConnect (in-app scanner).'
+              : 'Works with Phantom, Backpack, Solflare & all wallet-standard wallets'}
           </p>
         </div>
       </motion.div>
@@ -1553,6 +1758,7 @@ import {
   useCallback,
   type ReactNode,
 } from 'react';
+import { useWallet } from '@solana/wallet-adapter-react';
 import { api, ApiError } from '../lib/api';
 import { buildSiwsMessage, uint8ToBase64 } from '../lib/siws';
 
@@ -1572,28 +1778,16 @@ export interface AuthState {
   agentWallets: AgentWalletInfo[];
   /** The first active agent wallet (used as the default for rule creation). */
   primaryAgentWallet: AgentWalletInfo | null;
-  isConnecting: boolean;
+  /** True while the SIWS + JWT exchange is in progress. */
+  isSigning: boolean;
   error: string | null;
-  connect: () => Promise<void>;
+  /**
+   * Run the SIWS flow against the currently connected wallet.
+   * Call this after the wallet-adapter `connect()` resolves and `publicKey` is set.
+   */
+  signIn: () => Promise<void>;
   disconnect: () => void;
   clearError: () => void;
-}
-
-// ─── Wallet type declarations (window.solana injection) ───────────────────────
-
-declare global {
-  interface Window {
-    solana?: {
-      isPhantom?: boolean;
-      publicKey?: { toBase58(): string };
-      connect(opts?: { onlyIfTrusted?: boolean }): Promise<{ publicKey: { toBase58(): string } }>;
-      disconnect(): Promise<void>;
-      signMessage(
-        message: Uint8Array,
-        encoding: 'utf8' | 'hex',
-      ): Promise<{ signature: Uint8Array }>;
-    };
-  }
 }
 
 // ─── Context ──────────────────────────────────────────────────────────────────
@@ -1603,25 +1797,28 @@ const AuthContext = createContext<AuthState | null>(null);
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  // Must be rendered inside WalletProvider.
+  const { publicKey, signMessage, disconnect: walletDisconnect } = useWallet();
+
   const [walletPubkey, setWalletPubkey] = useState<string | null>(null);
   const [jwt, setJwt] = useState<string | null>(null);
   const [agentWallets, setAgentWallets] = useState<AgentWalletInfo[]>([]);
-  const [isConnecting, setIsConnecting] = useState(false);
+  const [isSigning, setIsSigning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const connect = useCallback(async () => {
+  const signIn = useCallback(async () => {
+    if (!publicKey || !signMessage) {
+      setError('No wallet connected. Please connect a wallet first.');
+      return;
+    }
+
     setError(null);
-    setIsConnecting(true);
+    setIsSigning(true);
+
+    const pubkey = publicKey.toBase58();
 
     try {
-      // ── Step 1: Connect Solana wallet ──────────────────────────────────────
-      if (!window.solana) {
-        throw new Error('No Solana wallet found. Please install Phantom or Backpack.');
-      }
-      const { publicKey } = await window.solana.connect();
-      const pubkey = publicKey.toBase58();
-
-      // ── Step 2: Fetch nonce from api-gateway ────────────────────────────────
+      // ── Step 1: Fetch nonce ─────────────────────────────────────────────────
       const nonceRes = await api.get<{
         ok: boolean;
         data: { nonce: string; issuedAt: string; expiresAt: string };
@@ -1630,7 +1827,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!nonceRes.ok) throw new Error('Failed to obtain sign-in nonce.');
       const { nonce, issuedAt, expiresAt } = nonceRes.data;
 
-      // ── Step 3: Build and sign SIWS message ─────────────────────────────────
+      // ── Step 2: Build + sign SIWS message ───────────────────────────────────
       const message = buildSiwsMessage({
         domain: window.location.host,
         walletPubkey: pubkey,
@@ -1639,14 +1836,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         expiresAt,
       });
       const msgBytes = new TextEncoder().encode(message);
-      const { signature } = await window.solana.signMessage(msgBytes, 'utf8');
+      const signature = await signMessage(msgBytes);
       const signatureBase64 = uint8ToBase64(signature);
 
-      // ── Step 4: Verify signature, receive JWT ───────────────────────────────
+      // ── Step 3: Verify signature → receive JWT ──────────────────────────────
       const verifyRes = await api.post<{
         ok: boolean;
         data: { token: string; walletPubkey: string };
-      }>('/api/auth/verify', { walletPubkey: pubkey, signature: signatureBase64, message, nonce });
+      }>('/api/auth/verify', {
+        walletPubkey: pubkey,
+        signature: signatureBase64,
+        message,
+        nonce,
+      });
 
       if (!verifyRes.ok) throw new Error('Signature verification failed.');
       const { token } = verifyRes.data;
@@ -1654,27 +1856,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setWalletPubkey(pubkey);
       setJwt(token);
 
-      // ── Step 5: Load or auto-create the primary agent wallet ────────────────
+      // ── Step 4: Load or auto-create the primary agent wallet ─────────────────
       const wallets = await loadOrCreateAgentWallet(token);
       setAgentWallets(wallets);
     } catch (err) {
       if (err instanceof ApiError) {
         const body = err.body as { message?: string } | null;
-        setError(body?.message ?? `Connection error (${err.status})`);
+        setError(body?.message ?? `Sign-in error (${err.status})`);
       } else {
-        setError(err instanceof Error ? err.message : 'Connection failed');
+        setError(err instanceof Error ? err.message : 'Sign-in failed');
       }
     } finally {
-      setIsConnecting(false);
+      setIsSigning(false);
     }
-  }, []);
+  }, [publicKey, signMessage]);
 
   const disconnect = useCallback(() => {
-    window.solana?.disconnect().catch(() => undefined);
+    walletDisconnect().catch(() => undefined);
     setWalletPubkey(null);
     setJwt(null);
     setAgentWallets([]);
-  }, []);
+  }, [walletDisconnect]);
 
   const clearError = useCallback(() => setError(null), []);
 
@@ -1687,9 +1889,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         jwt,
         agentWallets,
         primaryAgentWallet,
-        isConnecting,
+        isSigning,
         error,
-        connect,
+        signIn,
         disconnect,
         clearError,
       }}
@@ -1969,12 +2171,12 @@ export function useRules() {
     async (rawInput: string, agentWalletId: string): Promise<BackendRule | null> => {
       if (!jwt) return null;
       try {
-        const res = await api.post<{ ok: boolean; data: { rule: BackendRule } }>(
+        const res = await api.post<{ ok: boolean; data: BackendRule }>(
           '/api/rules',
           { rawInput, agentWalletId },
           jwt,
         );
-        return res.ok ? res.data.rule : null;
+        return res.ok ? res.data : null;
       } catch {
         return null;
       }
@@ -2278,17 +2480,74 @@ export function uint8ToBase64(bytes: Uint8Array): string {
 ################################################################################
 # FILE: app/src/main.tsx
 ################################################################################
-import { StrictMode } from 'react';
+import { StrictMode, useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
+import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react';
+import { PhantomWalletAdapter } from '@solana/wallet-adapter-phantom';
+import { WalletConnectWalletAdapter } from '@solana/wallet-adapter-walletconnect';
+import { WalletAdapterNetwork, type Adapter } from '@solana/wallet-adapter-base';
+import { clusterApiUrl } from '@solana/web3.js';
 import App from './App.tsx';
 import { AuthProvider } from './context/AuthContext.tsx';
 import './index.css';
 
+// Module-level constants — evaluated once at startup (Vite replaces import.meta.env at build time).
+const RPC_ENDPOINT =
+  (import.meta.env.VITE_SOLANA_RPC_URL as string | undefined) ?? clusterApiUrl('devnet');
+/** Trim so trailing newline / spaces from .env do not break WalletConnect pairing. */
+const WC_PROJECT_ID = (import.meta.env.VITE_WALLETCONNECT_PROJECT_ID as string | undefined)?.trim();
+
+/** HTTPS icon required by WalletConnect / Reown — http://localhost/favicon.ico often 404s or fails validation and breaks the QR URI. */
+const WC_METADATA_ICON = 'https://solana.com/favicon.ico';
+
+/**
+ * Wallet-adapter provider tree.
+ * Order: ConnectionProvider → WalletProvider → AuthProvider
+ * AuthProvider must be inside WalletProvider so it can call useWallet().
+ */
+function Providers({ children }: { children: React.ReactNode }) {
+  const wallets = useMemo(() => {
+    const adapters: Adapter[] = [new PhantomWalletAdapter()];
+
+    if (WC_PROJECT_ID && WC_PROJECT_ID.length > 0) {
+      adapters.push(
+        new WalletConnectWalletAdapter({
+          network: WalletAdapterNetwork.Devnet,
+          options: {
+            projectId: WC_PROJECT_ID,
+            metadata: {
+              name: 'SolAgent',
+              description: 'Verifiable AI wallet agent on Solana',
+              // Reown validates metadata; localhost http URLs for icons often break the wc: URI (phone shows "no usable data").
+              url: window.location.origin,
+              icons: [WC_METADATA_ICON],
+            },
+          },
+        }),
+      );
+    }
+
+    return adapters;
+    // Adapters are recreated only when the WC project ID changes — which never happens at runtime.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <ConnectionProvider endpoint={RPC_ENDPOINT}>
+      <WalletProvider wallets={wallets} autoConnect={false}>
+        {children}
+      </WalletProvider>
+    </ConnectionProvider>
+  );
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <AuthProvider>
-      <App />
-    </AuthProvider>
+    <Providers>
+      <AuthProvider>
+        <App />
+      </AuthProvider>
+    </Providers>
   </StrictMode>,
 );
 
@@ -2902,22 +3161,40 @@ volumes:
 ################################################################################
 # FILE: docker/qvac/Dockerfile
 ################################################################################
-# Tether QVAC OpenAI-compatible HTTP server — https://docs.qvac.tether.io/http-server/
-FROM node:20-bookworm-slim
+# Tether QVAC — OpenAI-compatible local LLM HTTP server
+# Docs: https://docs.qvac.tether.io/http-server/
+#
+# IMPORTANT: @qvac/sdk requires Node.js >= v22.17.
+# node:22 is the minimum — node:20 causes the SDK import to fail silently,
+# making every model constant appear "unknown" at startup.
+FROM node:22-bookworm-slim
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates wget \
+# wget                — compose healthcheck (GET /v1/models)
+# libatomic1          — rocksdb-native (transitive dep of corestore via bare-*)
+# libvulkan1          — Vulkan loader required by @qvac/llm-llamacpp
+# mesa-vulkan-drivers — Mesa lavapipe software Vulkan ICD; mandatory in headless/
+#                       Docker environments (no GPU) so llama.cpp can initialise
+#                       the Vulkan backend and fall back to CPU inference.
+#                       Without this the loader finds no device and crashes.
+#                       See: https://docs.qvac.tether.io/sdk/getting-started/installation
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates wget libatomic1 libvulkan1 mesa-vulkan-drivers \
   && rm -rf /var/lib/apt/lists/*
 
+# @qvac/sdk imports bare-* packages even in Node.js mode — they are required
+# peer deps, not Bare-runtime-only. See package.json for the exact set.
 COPY docker/qvac/package.json ./
-COPY docker/qvac/qvac.config.json ./
-
 RUN npm install --omit=dev --legacy-peer-deps
 
-ENV QVAC_CONFIG_PATH=/app/qvac.config.json
+# Config declares which model aliases the HTTP server can load.
+# Alias "solagent-parser" must match QVAC_MODEL in .env.devnet
+COPY docker/qvac/qvac.config.json ./
 
 EXPOSE 11434
 
+# -H 0.0.0.0  — listen on all interfaces (required inside Docker)
+# -c           — explicit config path (avoids auto-detect ambiguity)
 CMD ["npx", "qvac", "serve", "openai", "-H", "0.0.0.0", "-p", "11434", "-c", "/app/qvac.config.json"]
 
 
@@ -2929,7 +3206,27 @@ CMD ["npx", "qvac", "serve", "openai", "-H", "0.0.0.0", "-p", "11434", "-c", "/a
   "private": true,
   "dependencies": {
     "@qvac/cli": "^0.2.4",
-    "@qvac/sdk": "^0.9.2"
+    "@qvac/sdk": "^0.9.2",
+
+    "bare-abort-controller": "^1.1.1",
+    "bare-crypto": "^1.13.5",
+    "bare-fetch": "^2.5.1",
+    "bare-fs": "^4.7.1",
+    "bare-net": "^2.3.1",
+    "bare-os": "^3.9.1",
+    "bare-path": "^3.0.0",
+    "bare-process": "^4.4.1",
+    "bare-rpc": "^1.3.0",
+    "bare-runtime": "^1.28.4",
+    "bare-stream": "^2.13.1",
+    "bare-zlib": "^1.3.3",
+
+    "compact-encoding": "^2.19.0",
+    "corestore": "^7.9.2",
+    "hyperdrive": "^13.3.2",
+    "hyperswarm": "^4.17.0",
+    "pear-pipe": "^1.0.6",
+    "tar-stream": "^3.2.0"
   }
 }
 
@@ -2988,35 +3285,38 @@ pub struct Initialize {}
 ################################################################################
 # FILE: services/api-gateway/Dockerfile
 ################################################################################
-# Build context: monorepo root (docker-compose sets context: .)
-FROM node:20-alpine AS builder
+# Build context: monorepo root  (docker-compose sets context: .)
+# node:22-alpine — matches @types/node ^22 in devDeps; keeps image small
+FROM node:22-alpine AS builder
 WORKDIR /app
 
-# Copy workspace manifests first for layer caching
-COPY package.json ./
-COPY tsconfig.base.json ./
+# ── Dependency layer (cached unless manifests change) ─────────────────────────
+COPY package.json tsconfig.base.json ./
 COPY shared/package.json ./shared/
 COPY shared/prisma ./shared/prisma
 COPY services/api-gateway/package.json ./services/api-gateway/
 
+# openssl — required by Prisma query engine binary
+# libc6-compat — glibc shim required by several native addons on Alpine
 RUN apk add --no-cache openssl libc6-compat
-# Install all workspace dependencies (hoisted to /app/node_modules)
 RUN npm install --legacy-peer-deps
 
-# Copy source for shared and this service
+# ── Source + build ────────────────────────────────────────────────────────────
 COPY shared ./shared
 COPY services/api-gateway ./services/api-gateway
 
-# Build shared first, then the gateway
+# Explicit generate — don't rely on the prepare lifecycle hook being called
+RUN npx prisma generate --schema=shared/prisma/schema.prisma
+
 RUN npm run build -w @solagent/shared
 RUN npm run build -w @solagent/api-gateway
 
 # ── Production image ──────────────────────────────────────────────────────────
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS runner
 ENV NODE_ENV=production
 WORKDIR /app
 
-# node_modules symlinks for workspace packages must be preserved
+# Carry hoisted node_modules (includes .prisma/client), shared types, and dist
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/shared ./shared
 COPY --from=builder /app/services/api-gateway/dist ./services/api-gateway/dist
@@ -3815,12 +4115,12 @@ declare module 'fastify' {
 ################################################################################
 # FILE: services/audit-indexer/Dockerfile
 ################################################################################
-# Build context: monorepo root (docker-compose sets context: .)
-FROM node:20-alpine AS builder
+# Build context: monorepo root  (docker-compose sets context: .)
+FROM node:22-alpine AS builder
 WORKDIR /app
 
-COPY package.json ./
-COPY tsconfig.base.json ./
+# ── Dependency layer (cached unless manifests change) ─────────────────────────
+COPY package.json tsconfig.base.json ./
 COPY shared/package.json ./shared/
 COPY shared/prisma ./shared/prisma
 COPY services/audit-indexer/package.json ./services/audit-indexer/
@@ -3828,13 +4128,17 @@ COPY services/audit-indexer/package.json ./services/audit-indexer/
 RUN apk add --no-cache openssl libc6-compat
 RUN npm install --legacy-peer-deps
 
+# ── Source + build ────────────────────────────────────────────────────────────
 COPY shared ./shared
 COPY services/audit-indexer ./services/audit-indexer
+
+RUN npx prisma generate --schema=shared/prisma/schema.prisma
 
 RUN npm run build -w @solagent/shared
 RUN npm run build -w @solagent/audit-indexer
 
-FROM node:20-alpine AS runner
+# ── Production image ──────────────────────────────────────────────────────────
+FROM node:22-alpine AS runner
 ENV NODE_ENV=production
 WORKDIR /app
 
@@ -4194,12 +4498,12 @@ export function startIndexerWorker(log: FastifyBaseLogger): void {
 ################################################################################
 # FILE: services/condition-evaluator/Dockerfile
 ################################################################################
-# Build context: monorepo root (docker-compose sets context: .)
-FROM node:20-alpine AS builder
+# Build context: monorepo root  (docker-compose sets context: .)
+FROM node:22-alpine AS builder
 WORKDIR /app
 
-COPY package.json ./
-COPY tsconfig.base.json ./
+# ── Dependency layer (cached unless manifests change) ─────────────────────────
+COPY package.json tsconfig.base.json ./
 COPY shared/package.json ./shared/
 COPY shared/prisma ./shared/prisma
 COPY services/condition-evaluator/package.json ./services/condition-evaluator/
@@ -4207,13 +4511,17 @@ COPY services/condition-evaluator/package.json ./services/condition-evaluator/
 RUN apk add --no-cache openssl libc6-compat
 RUN npm install --legacy-peer-deps
 
+# ── Source + build ────────────────────────────────────────────────────────────
 COPY shared ./shared
 COPY services/condition-evaluator ./services/condition-evaluator
+
+RUN npx prisma generate --schema=shared/prisma/schema.prisma
 
 RUN npm run build -w @solagent/shared
 RUN npm run build -w @solagent/condition-evaluator
 
-FROM node:20-alpine AS runner
+# ── Production image ──────────────────────────────────────────────────────────
+FROM node:22-alpine AS runner
 ENV NODE_ENV=production
 WORKDIR /app
 
@@ -5029,12 +5337,12 @@ export function startConditionWorker(log: FastifyBaseLogger): void {
 ################################################################################
 # FILE: services/event-listener/Dockerfile
 ################################################################################
-# Build context: monorepo root (docker-compose sets context: .)
-FROM node:20-alpine AS builder
+# Build context: monorepo root  (docker-compose sets context: .)
+FROM node:22-alpine AS builder
 WORKDIR /app
 
-COPY package.json ./
-COPY tsconfig.base.json ./
+# ── Dependency layer (cached unless manifests change) ─────────────────────────
+COPY package.json tsconfig.base.json ./
 COPY shared/package.json ./shared/
 COPY shared/prisma ./shared/prisma
 COPY services/event-listener/package.json ./services/event-listener/
@@ -5042,13 +5350,17 @@ COPY services/event-listener/package.json ./services/event-listener/
 RUN apk add --no-cache openssl libc6-compat
 RUN npm install --legacy-peer-deps
 
+# ── Source + build ────────────────────────────────────────────────────────────
 COPY shared ./shared
 COPY services/event-listener ./services/event-listener
+
+RUN npx prisma generate --schema=shared/prisma/schema.prisma
 
 RUN npm run build -w @solagent/shared
 RUN npm run build -w @solagent/event-listener
 
-FROM node:20-alpine AS runner
+# ── Production image ──────────────────────────────────────────────────────────
+FROM node:22-alpine AS runner
 ENV NODE_ENV=production
 WORKDIR /app
 
@@ -5326,12 +5638,12 @@ export async function webhookRoutes(server: FastifyInstance): Promise<void> {
 ################################################################################
 # FILE: services/execution-engine/Dockerfile
 ################################################################################
-# Build context: monorepo root (docker-compose sets context: .)
-FROM node:20-alpine AS builder
+# Build context: monorepo root  (docker-compose sets context: .)
+FROM node:22-alpine AS builder
 WORKDIR /app
 
-COPY package.json ./
-COPY tsconfig.base.json ./
+# ── Dependency layer (cached unless manifests change) ─────────────────────────
+COPY package.json tsconfig.base.json ./
 COPY shared/package.json ./shared/
 COPY shared/prisma ./shared/prisma
 COPY services/execution-engine/package.json ./services/execution-engine/
@@ -5339,13 +5651,17 @@ COPY services/execution-engine/package.json ./services/execution-engine/
 RUN apk add --no-cache openssl libc6-compat
 RUN npm install --legacy-peer-deps
 
+# ── Source + build ────────────────────────────────────────────────────────────
 COPY shared ./shared
 COPY services/execution-engine ./services/execution-engine
+
+RUN npx prisma generate --schema=shared/prisma/schema.prisma
 
 RUN npm run build -w @solagent/shared
 RUN npm run build -w @solagent/execution-engine
 
-FROM node:20-alpine AS runner
+# ── Production image ──────────────────────────────────────────────────────────
+FROM node:22-alpine AS runner
 ENV NODE_ENV=production
 WORKDIR /app
 
@@ -6278,6 +6594,7 @@ async function processExecJob(job: Job<ExecJobPayload>, log: FastifyBaseLogger):
     let jupiterPriceUsd: number | undefined;
     let pythPriceUsd: number | undefined;
     let priceDeviation: number | undefined;
+    let savedQuoteResponse: Awaited<ReturnType<typeof getJupiterQuote>>['quoteResponse'] | undefined;
 
     if (action.type === 'swap' && action.from_asset && action.to_asset) {
       const quoteResult = await getJupiterQuote(
@@ -6287,6 +6604,7 @@ async function processExecJob(job: Job<ExecJobPayload>, log: FastifyBaseLogger):
         action.max_slippage_bps,
       );
       jupiterPriceUsd = quoteResult.jupiterPriceUsd;
+      savedQuoteResponse = quoteResult.quoteResponse;
 
       const oracleResult = await dualOracleCheck(action.from_asset, jupiterPriceUsd);
       pythPriceUsd = oracleResult.pythPriceUsd;
@@ -6377,14 +6695,11 @@ async function processExecJob(job: Job<ExecJobPayload>, log: FastifyBaseLogger):
     let altAddresses: string[] = [];
 
     if (action.type === 'swap' && action.from_asset && action.to_asset) {
-      const { quoteResponse } = await getJupiterQuote(
-        action.from_asset,
-        action.to_asset,
-        action.amount,
-        action.max_slippage_bps,
-      );
+      if (!savedQuoteResponse) {
+        throw new Error('savedQuoteResponse missing — price check must have been skipped');
+      }
       const swapIxs = await getJupiterSwapInstructions(
-        quoteResponse,
+        savedQuoteResponse,
         keypair.publicKey.toBase58(),
       );
       mainInstructions = swapIxs.instructions;
@@ -6552,12 +6867,12 @@ export async function shutdownWorkers(): Promise<void> {
 ################################################################################
 # FILE: services/rule-engine/Dockerfile
 ################################################################################
-# Build context: monorepo root (docker-compose sets context: .)
-FROM node:20-alpine AS builder
+# Build context: monorepo root  (docker-compose sets context: .)
+FROM node:22-alpine AS builder
 WORKDIR /app
 
-COPY package.json ./
-COPY tsconfig.base.json ./
+# ── Dependency layer (cached unless manifests change) ─────────────────────────
+COPY package.json tsconfig.base.json ./
 COPY shared/package.json ./shared/
 COPY shared/prisma ./shared/prisma
 COPY services/rule-engine/package.json ./services/rule-engine/
@@ -6565,13 +6880,17 @@ COPY services/rule-engine/package.json ./services/rule-engine/
 RUN apk add --no-cache openssl libc6-compat
 RUN npm install --legacy-peer-deps
 
+# ── Source + build ────────────────────────────────────────────────────────────
 COPY shared ./shared
 COPY services/rule-engine ./services/rule-engine
+
+RUN npx prisma generate --schema=shared/prisma/schema.prisma
 
 RUN npm run build -w @solagent/shared
 RUN npm run build -w @solagent/rule-engine
 
-FROM node:20-alpine AS runner
+# ── Production image ──────────────────────────────────────────────────────────
+FROM node:22-alpine AS runner
 ENV NODE_ENV=production
 WORKDIR /app
 
@@ -7642,16 +7961,26 @@ declare module 'fastify' {
 ################################################################################
 # FILE: shared/Dockerfile.migrate
 ################################################################################
-FROM node:20-alpine
+# One-shot Prisma migration runner — exits 0 on success, never restarts
+# (docker-compose: restart: 'no', other services depend_on: service_completed_successfully)
+FROM node:22-alpine
 WORKDIR /app
+
 COPY package.json ./
 COPY shared/package.json ./shared/
 COPY shared/prisma ./shared/prisma
+
 RUN apk add --no-cache openssl libc6-compat
+# --workspace=shared installs only shared + its deps (no other services)
 RUN npm install --legacy-peer-deps --workspace=shared
+
 COPY shared ./shared
 WORKDIR /app/shared
+
+# Generate client so Prisma CLI can resolve the schema correctly
 RUN npx prisma generate --schema=prisma/schema.prisma
+
+# migrate deploy applies pending migrations without generating the client again
 CMD ["npx", "prisma", "migrate", "deploy", "--schema=prisma/schema.prisma"]
 
 

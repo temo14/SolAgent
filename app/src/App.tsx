@@ -94,12 +94,12 @@ function AuthenticatedApp() {
           onClick={() => setActiveView('dashboard')}
         >
           <div className="w-12 h-12 rounded-[18px] bg-brand-ink flex items-center justify-center text-white font-bold text-2xl transition-transform group-hover:rotate-6 shadow-xl shadow-black/10">
-            A
+            S
           </div>
           <div className="flex flex-col -space-y-1">
-            <span className="text-2xl font-black tracking-tighter">AURA</span>
+            <span className="text-2xl font-black tracking-tighter">SolAgent</span>
             <span className="text-[10px] font-bold tracking-[0.4em] text-brand-safe leading-none">
-              SECURE AGENT
+              VERIFIABLE AI WALLET
             </span>
           </div>
         </div>

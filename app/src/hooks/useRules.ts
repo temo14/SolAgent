@@ -112,12 +112,12 @@ export function useRules() {
     async (rawInput: string, agentWalletId: string): Promise<BackendRule | null> => {
       if (!jwt) return null;
       try {
-        const res = await api.post<{ ok: boolean; data: { rule: BackendRule } }>(
+        const res = await api.post<{ ok: boolean; data: BackendRule }>(
           '/api/rules',
           { rawInput, agentWalletId },
           jwt,
         );
-        return res.ok ? res.data.rule : null;
+        return res.ok ? res.data : null;
       } catch {
         return null;
       }

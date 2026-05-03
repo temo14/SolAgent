@@ -13,8 +13,17 @@ shared/dist
 # Env files (never commit real secrets)
 .env.devnet
 .env.mainnet
+.env.localnet
 .env.local
 .env
+
+# Always commit example templates
+!.env.devnet.example
+
+# Frontend Vite env files (contain API keys)
+app/.env.development
+app/.env.mainnet
+app/.env.localnet
 
 # Prisma generated client
 shared/node_modules

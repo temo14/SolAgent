@@ -5,6 +5,7 @@ import {
   useCallback,
   type ReactNode,
 } from 'react';
+import { useWallet } from '@solana/wallet-adapter-react';
 import { api, ApiError } from '../lib/api';
 import { buildSiwsMessage, uint8ToBase64 } from '../lib/siws';
 
@@ -24,28 +25,16 @@ export interface AuthState {
   agentWallets: AgentWalletInfo[];
   /** The first active agent wallet (used as the default for rule creation). */
   primaryAgentWallet: AgentWalletInfo | null;
-  isConnecting: boolean;
+  /** True while the SIWS + JWT exchange is in progress. */
+  isSigning: boolean;
   error: string | null;
-  connect: () => Promise<void>;
+  /**
+   * Run the SIWS flow against the currently connected wallet.
+   * Call this after the wallet-adapter `connect()` resolves and `publicKey` is set.
+   */
+  signIn: () => Promise<void>;
   disconnect: () => void;
   clearError: () => void;
-}
-
-// ─── Wallet type declarations (window.solana injection) ───────────────────────
-
-declare global {
-  interface Window {
-    solana?: {
-      isPhantom?: boolean;
-      publicKey?: { toBase58(): string };
-      connect(opts?: { onlyIfTrusted?: boolean }): Promise<{ publicKey: { toBase58(): string } }>;
-      disconnect(): Promise<void>;
-      signMessage(
-        message: Uint8Array,
-        encoding: 'utf8' | 'hex',
-      ): Promise<{ signature: Uint8Array }>;
-    };
-  }
 }
 
 // ─── Context ──────────────────────────────────────────────────────────────────
@@ -55,25 +44,28 @@ const AuthContext = createContext<AuthState | null>(null);
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  // Must be rendered inside WalletProvider.
+  const { publicKey, signMessage, disconnect: walletDisconnect } = useWallet();
+
   const [walletPubkey, setWalletPubkey] = useState<string | null>(null);
   const [jwt, setJwt] = useState<string | null>(null);
   const [agentWallets, setAgentWallets] = useState<AgentWalletInfo[]>([]);
-  const [isConnecting, setIsConnecting] = useState(false);
+  const [isSigning, setIsSigning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const connect = useCallback(async () => {
+  const signIn = useCallback(async () => {
+    if (!publicKey || !signMessage) {
+      setError('No wallet connected. Please connect a wallet first.');
+      return;
+    }
+
     setError(null);
-    setIsConnecting(true);
+    setIsSigning(true);
+
+    const pubkey = publicKey.toBase58();
 
     try {
-      // ── Step 1: Connect Solana wallet ──────────────────────────────────────
-      if (!window.solana) {
-        throw new Error('No Solana wallet found. Please install Phantom or Backpack.');
-      }
-      const { publicKey } = await window.solana.connect();
-      const pubkey = publicKey.toBase58();
-
-      // ── Step 2: Fetch nonce from api-gateway ────────────────────────────────
+      // ── Step 1: Fetch nonce ─────────────────────────────────────────────────
       const nonceRes = await api.get<{
         ok: boolean;
         data: { nonce: string; issuedAt: string; expiresAt: string };
@@ -82,7 +74,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!nonceRes.ok) throw new Error('Failed to obtain sign-in nonce.');
       const { nonce, issuedAt, expiresAt } = nonceRes.data;
 
-      // ── Step 3: Build and sign SIWS message ─────────────────────────────────
+      // ── Step 2: Build + sign SIWS message ───────────────────────────────────
       const message = buildSiwsMessage({
         domain: window.location.host,
         walletPubkey: pubkey,
@@ -91,14 +83,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         expiresAt,
       });
       const msgBytes = new TextEncoder().encode(message);
-      const { signature } = await window.solana.signMessage(msgBytes, 'utf8');
+      const signature = await signMessage(msgBytes);
       const signatureBase64 = uint8ToBase64(signature);
 
-      // ── Step 4: Verify signature, receive JWT ───────────────────────────────
+      // ── Step 3: Verify signature → receive JWT ──────────────────────────────
       const verifyRes = await api.post<{
         ok: boolean;
         data: { token: string; walletPubkey: string };
-      }>('/api/auth/verify', { walletPubkey: pubkey, signature: signatureBase64, message, nonce });
+      }>('/api/auth/verify', {
+        walletPubkey: pubkey,
+        signature: signatureBase64,
+        message,
+        nonce,
+      });
 
       if (!verifyRes.ok) throw new Error('Signature verification failed.');
       const { token } = verifyRes.data;
@@ -106,27 +103,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setWalletPubkey(pubkey);
       setJwt(token);
 
-      // ── Step 5: Load or auto-create the primary agent wallet ────────────────
+      // ── Step 4: Load or auto-create the primary agent wallet ─────────────────
       const wallets = await loadOrCreateAgentWallet(token);
       setAgentWallets(wallets);
     } catch (err) {
       if (err instanceof ApiError) {
         const body = err.body as { message?: string } | null;
-        setError(body?.message ?? `Connection error (${err.status})`);
+        setError(body?.message ?? `Sign-in error (${err.status})`);
       } else {
-        setError(err instanceof Error ? err.message : 'Connection failed');
+        setError(err instanceof Error ? err.message : 'Sign-in failed');
       }
     } finally {
-      setIsConnecting(false);
+      setIsSigning(false);
     }
-  }, []);
+  }, [publicKey, signMessage]);
 
   const disconnect = useCallback(() => {
-    window.solana?.disconnect().catch(() => undefined);
+    walletDisconnect().catch(() => undefined);
     setWalletPubkey(null);
     setJwt(null);
     setAgentWallets([]);
-  }, []);
+  }, [walletDisconnect]);
 
   const clearError = useCallback(() => setError(null), []);
 
@@ -139,9 +136,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         jwt,
         agentWallets,
         primaryAgentWallet,
-        isConnecting,
+        isSigning,
         error,
-        connect,
+        signIn,
         disconnect,
         clearError,
       }}

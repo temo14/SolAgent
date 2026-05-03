@@ -1,20 +1,10 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# SolAgent — frontend (`app/`)
 
-# Run and deploy your AI Studio app
+React + Vite + Tailwind CSS v4. Proxies `/api` to the monorepo backend (see root `docker-compose.yml` and `ENV.md`).
 
-This contains everything you need to run your app locally.
+## Run locally
 
-View your app in AI Studio: https://ai.studio/apps/35c2a856-0890-4424-9f27-df2eda442e60
-
-## Run Locally
-
-**Prerequisites:**  Node.js
-
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+1. From repo root: `npm install`
+2. Backend: `docker compose --env-file .env.devnet up` (or your chosen env file)
+3. Env: copy `app/.env.local.example` if needed; for dev, `app/.env.development` supplies `VITE_*` vars
+4. `cd app && npm run dev` — open http://localhost:3000

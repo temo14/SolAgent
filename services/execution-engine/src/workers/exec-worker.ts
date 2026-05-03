@@ -150,6 +150,7 @@ async function processExecJob(job: Job<ExecJobPayload>, log: FastifyBaseLogger):
     let jupiterPriceUsd: number | undefined;
     let pythPriceUsd: number | undefined;
     let priceDeviation: number | undefined;
+    let savedQuoteResponse: Awaited<ReturnType<typeof getJupiterQuote>>['quoteResponse'] | undefined;
 
     if (action.type === 'swap' && action.from_asset && action.to_asset) {
       const quoteResult = await getJupiterQuote(
@@ -159,6 +160,7 @@ async function processExecJob(job: Job<ExecJobPayload>, log: FastifyBaseLogger):
         action.max_slippage_bps,
       );
       jupiterPriceUsd = quoteResult.jupiterPriceUsd;
+      savedQuoteResponse = quoteResult.quoteResponse;
 
       const oracleResult = await dualOracleCheck(action.from_asset, jupiterPriceUsd);
       pythPriceUsd = oracleResult.pythPriceUsd;
@@ -249,14 +251,11 @@ async function processExecJob(job: Job<ExecJobPayload>, log: FastifyBaseLogger):
     let altAddresses: string[] = [];
 
     if (action.type === 'swap' && action.from_asset && action.to_asset) {
-      const { quoteResponse } = await getJupiterQuote(
-        action.from_asset,
-        action.to_asset,
-        action.amount,
-        action.max_slippage_bps,
-      );
+      if (!savedQuoteResponse) {
+        throw new Error('savedQuoteResponse missing — price check must have been skipped');
+      }
       const swapIxs = await getJupiterSwapInstructions(
-        quoteResponse,
+        savedQuoteResponse,
         keypair.publicKey.toBase58(),
       );
       mainInstructions = swapIxs.instructions;
