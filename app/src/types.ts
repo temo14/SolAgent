@@ -12,11 +12,9 @@ export interface AutomationRule {
   status: 'active' | 'inactive';
   lastRun: string;
   executions: number;
-  profit: string;
   limits?: {
     maxSpendPerDay: number;
-    maxFrequencyPerHour: number;
-    executionDelay: number; // in minutes
+    maxFiresDay: number;
   };
   logic: {
     condition: string;
@@ -35,13 +33,17 @@ export interface AuditLogEntry {
   action: {
     label: string;
     txHash: string;
+    /** Full transaction signature (base58) — for explorer links */
+    txSignatureFull?: string;
     status: 'success' | 'failed' | 'retrying' | 'pending';
-    cancelableUntil?: string; // ISO timestamp
+    cancelableUntil?: string;
   };
   details: {
     gasUsed: string;
-    slippage: string;
-    route: string[];
+    /** Oracle price used at execution time */
+    oraclePrice: string;
+    /** Price feed source (e.g. Jupiter, Pyth) */
+    priceSources: string[];
     riskScore: 'low' | 'med';
   };
 }

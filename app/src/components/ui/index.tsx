@@ -42,7 +42,7 @@ export const ErrorBanner = ({ message, onRetry }: { message: string, onRetry: ()
       <AlertCircle className="text-brand-stop" size={18} />
       <span className="text-sm font-medium text-brand-stop uppercase tracking-tight font-bold">{message}</span>
     </div>
-    <button onClick={onRetry} className="text-[10px] font-extrabold uppercase tracking-widest text-brand-stop hover:underline">Sync RPC</button>
+    <button onClick={onRetry} className="text-[10px] font-extrabold uppercase tracking-widest text-brand-stop hover:underline">Retry</button>
   </motion.div>
 );
 

@@ -22,6 +22,14 @@ const VerifyBodySchema = z.object({
   nonce: z.string().length(64), // 32 bytes → 64 hex chars
 });
 
+/** Dev bypass body — echoes SIWS timings for optional server-side asserts in the future */
+const DevBypassBodySchema = z.object({
+  walletPubkey: z.string().min(32).max(44),
+  nonce: z.string().length(64),
+  issuedAt: z.string(),
+  expiresAt: z.string(),
+});
+
 export async function authRoutes(server: FastifyInstance): Promise<void> {
   /**
    * GET /auth/nonce
@@ -114,6 +122,87 @@ export async function authRoutes(server: FastifyInstance): Promise<void> {
       const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
       request.log.info({ walletPubkey }, 'SIWS: authenticated');
+
+      return reply.send({
+        ok: true,
+        data: { token, expiresAt, walletPubkey: user.walletPubkey },
+      });
+    },
+  );
+
+  /**
+   * POST /auth/dev-bypass
+   * Development only: skips Ed25519 verify after the same nonce check as `/verify`.
+   * Docker Compose defaults api-gateway NODE_ENV to production — set AUTH_DEV_BYPASS=true
+   * and AUTH_DEV_BYPASS_WALLET to the same base58 pubkey as VITE_DEV_WALLET on the client.
+   */
+  server.post(
+    '/dev-bypass',
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const isNodeDev = process.env.NODE_ENV === 'development';
+      const bypassFlag = process.env.AUTH_DEV_BYPASS === 'true';
+      if (!isNodeDev && !bypassFlag) {
+        return reply.status(404).send({ ok: false, message: 'Not found' });
+      }
+
+      const bodyParse = DevBypassBodySchema.safeParse(request.body);
+      if (!bodyParse.success) {
+        return reply.status(400).send({
+          ok: false,
+          message: 'Invalid request body',
+          detail: bodyParse.error.flatten(),
+        });
+      }
+
+      const { walletPubkey, nonce } = bodyParse.data;
+      const allowlist = process.env.AUTH_DEV_BYPASS_WALLET?.trim();
+
+      if (bypassFlag) {
+        if (!allowlist) {
+          request.log.warn('AUTH_DEV_BYPASS is set but AUTH_DEV_BYPASS_WALLET is missing');
+          return reply.status(503).send({
+            ok: false,
+            message: 'Server misconfigured: AUTH_DEV_BYPASS_WALLET required when AUTH_DEV_BYPASS=true',
+          });
+        }
+        if (walletPubkey !== allowlist) {
+          return reply.status(403).send({ ok: false, message: 'Dev bypass pubkey not allowed' });
+        }
+      } else if (allowlist !== undefined && allowlist !== '' && walletPubkey !== allowlist) {
+        return reply.status(403).send({ ok: false, message: 'Dev bypass pubkey not allowed' });
+      }
+
+      const redis = getRedis();
+      const nonceKey = `${NONCE_REDIS_PREFIX}${nonce}`;
+      const storedValue = await redis.get(nonceKey);
+      if (storedValue === null) {
+        request.log.warn({ walletPubkey }, 'DEV BYPASS: nonce not found or expired');
+        return reply.status(401).send({ ok: false, message: 'Nonce invalid or expired' });
+      }
+      if (storedValue !== 'unbound' && storedValue !== walletPubkey) {
+        request.log.warn({ walletPubkey, stored: storedValue }, 'DEV BYPASS: nonce wallet mismatch');
+        return reply.status(401).send({ ok: false, message: 'Nonce wallet mismatch' });
+      }
+
+      await redis.del(nonceKey);
+
+      const prisma = getPrisma();
+      const user = await prisma.user.upsert({
+        where: { walletPubkey },
+        update: { lastSeenAt: new Date() },
+        create: { walletPubkey },
+        select: { id: true, walletPubkey: true, isActive: true },
+      });
+
+      if (!user.isActive) {
+        return reply.status(403).send({ ok: false, message: 'Account suspended' });
+      }
+
+      const payload: JwtPayload = { walletPubkey: user.walletPubkey, userId: user.id };
+      const token = server.jwt.sign(payload, { expiresIn: '24h' });
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+      request.log.warn({ walletPubkey }, 'DEV BYPASS: authenticated (no signature)');
 
       return reply.send({
         ok: true,

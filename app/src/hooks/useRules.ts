@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { api } from '../lib/api';
+import { api, ApiError } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import type { AutomationRule } from '../types';
 
@@ -63,11 +63,9 @@ export function mapBackendRule(r: BackendRule): AutomationRule {
       ? new Date(r.activatedAt).toLocaleDateString()
       : 'Never',
     executions: r.firesToday ?? 0,
-    profit: '$0.00',
     limits: {
       maxSpendPerDay: r.maxAmountUsd ? Math.round(Number(r.maxAmountUsd)) : 1000,
-      maxFrequencyPerHour: 1,
-      executionDelay: 0,
+      maxFiresDay: r.maxFiresDay ?? 10,
     },
     logic: { condition, action },
   };
@@ -111,15 +109,29 @@ export function useRules() {
   const createRule = useCallback(
     async (rawInput: string, agentWalletId: string): Promise<BackendRule | null> => {
       if (!jwt) return null;
+      const clientTimezone =
+        typeof Intl !== 'undefined'
+          ? Intl.DateTimeFormat().resolvedOptions().timeZone
+          : undefined;
       try {
         const res = await api.post<{ ok: boolean; data: BackendRule }>(
           '/api/rules',
-          { rawInput, agentWalletId },
+          {
+            rawInput,
+            agentWalletId,
+            ...(clientTimezone !== undefined ? { clientTimezone } : {}),
+          },
           jwt,
         );
         return res.ok ? res.data : null;
-      } catch {
-        return null;
+      } catch (err) {
+        if (err instanceof ApiError) {
+          const body = err.body as { message?: string; errorCode?: string } | null;
+          throw new Error(
+            body?.message ?? `Rule service unavailable (${String(err.status)}).`,
+          );
+        }
+        throw new Error(err instanceof Error ? err.message : 'Could not reach rule service.');
       }
     },
     [jwt],

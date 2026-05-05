@@ -34,12 +34,13 @@ async function start(): Promise<void> {
 
   // ── Start background workers ───────────────────────────────────────────────
   startConditionWorker(server.log);
-  const reconcileTimer = startReconciliationLoop(server.log);
+  const [standardReconcileTimer, cronReconcileTimer] = startReconciliationLoop(server.log);
 
   // ── Graceful shutdown ──────────────────────────────────────────────────────
   const shutdown = async (): Promise<void> => {
     server.log.info({ service: SERVICE_NAME }, 'Shutting down...');
-    clearInterval(reconcileTimer);
+    clearInterval(standardReconcileTimer);
+    clearInterval(cronReconcileTimer);
     await server.close();
     await disconnectPrisma();
     await disconnectSubscriber();

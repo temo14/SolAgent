@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
-import { ERROR_CODES, REDIS_CHANNEL } from '@solagent/shared';
+import { ERROR_CODES, REDIS_CHANNEL, isValidIanaTimeZone } from '@solagent/shared';
 import { getPrisma } from '../lib/prisma.js';
 import { parseRuleWithQvac, QvacError } from '../lib/qvac.js';
 import { simulateRule } from '../lib/simulate.js';
@@ -18,7 +18,9 @@ const CreateRuleBodySchema = z.object({
   agentWalletId: z.string().uuid(),
   rawInput: z.string().min(10).max(2000),
   maxAmountUsd: z.number().positive().optional(),
-  maxFiresPerDay: z.number().int().min(1).max(100).optional(),
+  maxFiresPerDay: z.number().int().min(1).max(1440).optional(),
+  /** Browser IANA TZ e.g. Asia/Dubai — used for until_local_hour on time_cron */
+  clientTimezone: z.string().min(2).max(80).optional(),
 });
 
 const PatchStatusBodySchema = z.object({
@@ -130,10 +132,17 @@ export async function ruleRoutes(server: FastifyInstance): Promise<void> {
         });
       }
 
-      const { agentWalletId, rawInput, maxAmountUsd, maxFiresPerDay } = bodyParse.data;
+      const { agentWalletId, rawInput, maxAmountUsd, maxFiresPerDay, clientTimezone } =
+        bodyParse.data;
 
       // Verify the agent wallet belongs to this user
       const prisma = getPrisma();
+
+      const userRow = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { timezone: true },
+      });
+
       const agentWallet = await prisma.agentWallet.findFirst({
         where: { id: agentWalletId, userId, isActive: true },
       });
@@ -159,6 +168,26 @@ export async function ruleRoutes(server: FastifyInstance): Promise<void> {
           });
         }
         throw err;
+      }
+
+      const tzFromBrowser = clientTimezone?.trim();
+      const effectiveTz =
+        tzFromBrowser && isValidIanaTimeZone(tzFromBrowser)
+          ? tzFromBrowser
+          : userRow?.timezone && isValidIanaTimeZone(userRow.timezone)
+            ? userRow.timezone
+            : 'UTC';
+
+      if (tzFromBrowser && isValidIanaTimeZone(tzFromBrowser)) {
+        await prisma.user.update({
+          where: { id: userId },
+          data: { timezone: tzFromBrowser },
+        });
+      }
+
+      if (parsedRule.trigger.type === 'time_cron') {
+        parsedRule.trigger.schedule_timezone =
+          parsedRule.trigger.schedule_timezone ?? effectiveTz;
       }
 
       const ruleHash = computeRuleHash(parsedRule);

@@ -1,5 +1,9 @@
 import { createHash } from 'crypto';
 import type { SolAgentRule, HeliusWebhookEvent } from '@solagent/shared';
+import {
+  getHourInTimeZone,
+  isValidIanaTimeZone,
+} from '@solagent/shared';
 import { getSolBalance, getCurrentSlot, LAMPORTS_PER_SOL } from './rpc.js';
 import { getAssetPriceUsd } from './price.js';
 import { getPrisma } from './prisma.js';
@@ -13,8 +17,8 @@ import { getPrisma } from './prisma.js';
  *   SHA-256(rule_id + ":" + trigger_event_signature + ":" + trigger_slot)
  *
  * For polling-path events: trigger_event_signature = "poll:<ruleId>:<epoch-bucket>"
- * where epoch-bucket = Math.floor(unixSeconds / 300) — one bucket per 5-min window.
- * This prevents the reconciliation loop from firing the same rule twice per window.
+ * - Non-cron: bucket = Math.floor(unixSeconds / 300) — one per 5-min window.
+ * - time_cron: bucket = Math.floor(unixSeconds / 60) — one per minute (matches cron tick).
  */
 export function computeIdempotencyKey(
   ruleId: string,
@@ -57,9 +61,13 @@ export async function evaluateTrigger(
 ): Promise<TriggerMatch> {
   const { trigger } = rule.parsedRule;
 
-  // Determine event provenance for idempotency key
-  const epoch5min = Math.floor(Date.now() / 1000 / 300);
-  const eventSig = event?.signature ?? `poll:${rule.id}:${epoch5min}`;
+  // Polling-path idempotency: 5-minute buckets except time_cron (per-minute buckets).
+  const nowSec = Math.floor(Date.now() / 1000);
+  const pollBucket =
+    event === null && trigger.type === 'time_cron'
+      ? Math.floor(nowSec / 60)
+      : Math.floor(nowSec / 300);
+  const eventSig = event?.signature ?? `poll:${rule.id}:${pollBucket}`;
   const eventSlot = event?.slot ?? (await getCurrentSlot());
 
   switch (trigger.type) {
@@ -88,6 +96,24 @@ export async function evaluateTrigger(
       // Cron trigger evaluation handled by the reconciliation loop.
       // cronMatch checks if the current time satisfies the cron expression.
       if (event !== null) return NOT_MATCHED(eventSig, eventSlot); // cron only fires on poll path
+
+      // End-time: prefer local wall-clock in schedule_timezone (browser IANA at rule create).
+      if (
+        trigger.until_local_hour !== undefined &&
+        trigger.schedule_timezone !== undefined &&
+        isValidIanaTimeZone(trigger.schedule_timezone)
+      ) {
+        const localH = getHourInTimeZone(trigger.schedule_timezone);
+        if (localH !== null && localH >= trigger.until_local_hour) {
+          return NOT_MATCHED(eventSig, eventSlot);
+        }
+      } else if (trigger.until_utc_hour !== undefined) {
+        const nowHourUtc = new Date().getUTCHours();
+        if (nowHourUtc >= trigger.until_utc_hour) {
+          return NOT_MATCHED(eventSig, eventSlot);
+        }
+      }
+
       const matches = matchesCronExpression(trigger.cron_expression ?? '');
       return {
         matched: matches,

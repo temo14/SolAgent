@@ -9,7 +9,6 @@ import {
   Fingerprint,
   AlertTriangle,
 } from 'lucide-react';
-import { SimulationPanel } from './SimulationPanel';
 import { SafetySettings } from './SafetySettings';
 import type { BackendRule } from '../../hooks/useRules';
 
@@ -40,7 +39,6 @@ export const RuleWizard = ({
   const [parseError, setParseError] = useState<string | null>(null);
   const [deployError, setDeployError] = useState<string | null>(null);
   const [parsedRule, setParsedRule] = useState<BackendRule | null>(null);
-  const [showSimulation, setShowSimulation] = useState(false);
   const [maxSpend, setMaxSpend] = useState(1000);
   const [delay, setDelay] = useState(0);
 
@@ -50,18 +48,25 @@ export const RuleWizard = ({
     setIsParsing(true);
     setParseError(null);
 
-    const rule = await createRule(ruleInput.trim(), agentWalletId);
-    if (!rule) {
+    try {
+      const rule = await createRule(ruleInput.trim(), agentWalletId);
+      if (!rule) {
+        setParseError(
+          'Unexpected response from the rule service. Check that you are still signed in and try again.',
+        );
+        return;
+      }
+      setParsedRule(rule);
+      setWizardStep(2);
+    } catch (err) {
       setParseError(
-        'Could not parse your rule. Make sure QVAC is running and try again, or rephrase it.',
+        err instanceof Error
+          ? err.message
+          : 'Could not parse your rule. If the message mentions QVAC, wait for the parser container to finish starting (Docker: `qvac` health), then retry.',
       );
+    } finally {
       setIsParsing(false);
-      return;
     }
-
-    setParsedRule(rule);
-    setIsParsing(false);
-    setWizardStep(2);
   };
 
   // ── Step 3: Activate ──────────────────────────────────────────────────────
@@ -195,22 +200,7 @@ export const RuleWizard = ({
           >
             <div className="flex items-end justify-between">
               <h1 className="text-5xl font-semibold tracking-tight">Rules Preview</h1>
-              <button
-                onClick={() => setShowSimulation(!showSimulation)}
-                className="text-[10px] font-bold uppercase tracking-widest text-brand-wait underline"
-              >
-                {showSimulation ? 'Hide Test Results' : 'Test With Past Data'}
-              </button>
             </div>
-
-            {showSimulation && (
-              <SimulationPanel
-                avgTriggers="~1.2 / Day"
-                estSpend="$142.10"
-                maxDrawdown="-$4.20"
-                projectedRoi="+8.4%"
-              />
-            )}
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div className="p-10 rounded-[44px] bg-white border border-black/5 shadow-sm space-y-8">

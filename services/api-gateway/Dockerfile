@@ -29,6 +29,9 @@ FROM node:22-alpine AS runner
 ENV NODE_ENV=production
 WORKDIR /app
 
+# openssl — required by the Prisma query engine binary (linux-musl-openssl-3.0.x)
+RUN apk add --no-cache openssl
+
 # Carry hoisted node_modules (includes .prisma/client), shared types, and dist
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/shared ./shared

@@ -24,9 +24,6 @@ export const AuditLogView = ({ auditLog }: AuditLogViewProps) => {
           <h1 className="text-5xl font-semibold tracking-tight text-brand-ink">Activity History</h1>
           <p className="text-black/40 text-xl font-medium mt-2">Every automatic action is recorded with the exact reason it was triggered.</p>
         </div>
-        <div className="flex gap-4">
-           <button className="px-5 py-2.5 rounded-xl border border-black/5 bg-white text-[10px] font-bold uppercase tracking-widest hover:bg-black/5 transition-colors">Verify Strategy Logic</button>
-        </div>
       </div>
 
       {auditLog.length === 0 ? (

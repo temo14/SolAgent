@@ -1,11 +1,10 @@
 import { useState, useCallback } from 'react';
 import {
-  Bell,
-  Search,
-  ShieldAlert,
   XCircle,
   Zap,
   LogOut,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { AppView } from './types';
@@ -20,6 +19,7 @@ import { useAuth } from './context/AuthContext';
 import { useRules } from './hooks/useRules';
 import { useAudit } from './hooks/useAudit';
 import { useSSE, type ExecResult } from './hooks/useSSE';
+import { useAgentBalance } from './hooks/useAgentBalance';
 
 // ─── Authenticated shell ───────────────────────────────────────────────────────
 
@@ -35,7 +35,9 @@ function AuthenticatedApp() {
     createRule,
     activateRule,
   } = useRules();
-  const { auditLog, isLoading: auditLoading, prependLiveEntry } = useAudit(
+  // Audit events are indexed by the *user* signing wallet, not the agent keypair.
+  const { auditLog, isLoading: auditLoading, prependLiveEntry } = useAudit(walletPubkey);
+  const { sol: solBalance, isLoading: balanceLoading, refetch: refetchBalance } = useAgentBalance(
     primaryAgentWallet?.pubkey ?? null,
   );
 
@@ -43,6 +45,7 @@ function AuthenticatedApp() {
   const [agentStatus, setAgentStatus] = useState<AgentStatus>(AgentStatus.ACTIVE);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [footerAgentCopied, setFooterAgentCopied] = useState(false);
 
   // ── SSE: live execution results ──────────────────────────────────────────
   useSSE(jwt, useCallback((result: ExecResult) => {
@@ -57,14 +60,14 @@ function AuthenticatedApp() {
         createdAt: result.timestamp,
       });
     }
-    // Refresh rules so firesToday stays accurate
     void fetchRules();
-  }, [prependLiveEntry, fetchRules]));
+    void refetchBalance();
+  }, [prependLiveEntry, fetchRules, refetchBalance]));
 
   const handleRefresh = () => {
     setIsRefreshing(true);
     setError(null);
-    Promise.all([fetchRules()]).finally(() => setIsRefreshing(false));
+    Promise.all([fetchRules(), refetchBalance()]).finally(() => setIsRefreshing(false));
   };
 
   const handleEmergencyToggle = async () => {
@@ -81,9 +84,20 @@ function AuthenticatedApp() {
     ? `${walletPubkey.slice(0, 4)}…${walletPubkey.slice(-4)}`
     : '–';
 
-  const agentPubkey = primaryAgentWallet?.pubkey
-    ? `${primaryAgentWallet.pubkey.slice(0, 4)}…${primaryAgentWallet.pubkey.slice(-4)}`
-    : 'No agent wallet';
+  const agentPubkeyFull = primaryAgentWallet?.pubkey ?? null;
+
+  const copyFooterAgentAddress = async () => {
+    if (!agentPubkeyFull) return;
+    try {
+      await navigator.clipboard.writeText(agentPubkeyFull);
+      setFooterAgentCopied(true);
+      window.setTimeout(() => setFooterAgentCopied(false), 2000);
+    } catch {
+      // insecure context / permission denied
+    }
+  };
+
+  const activeRuleCount = rules.filter((r) => r.status === 'active').length;
 
   return (
     <div className="min-h-screen bg-brand-bg pb-32">
@@ -124,22 +138,6 @@ function AuthenticatedApp() {
           </div>
 
           <div className="flex items-center gap-6">
-            <div className="relative group hidden sm:block">
-              <Search
-                className="absolute left-4 top-1/2 -translate-y-1/2 text-black/20 group-focus-within:text-brand-ink transition-colors"
-                size={16}
-              />
-              <input
-                placeholder="Search tx, rules…"
-                className="pl-11 pr-6 py-2.5 rounded-full bg-black/5 border border-transparent focus:bg-white focus:border-black/5 focus:ring-8 focus:ring-black/5 focus:outline-none transition-all text-xs font-semibold placeholder:text-black/20 w-48 focus:w-64"
-              />
-            </div>
-
-            <button className="w-10 h-10 rounded-full border border-black/5 flex items-center justify-center text-black/20 hover:text-black transition-colors relative">
-              <Bell size={18} />
-              <div className="absolute top-2.5 right-2.5 w-1.5 h-1.5 rounded-full bg-brand-stop border-2 border-[#F8F9FA]" />
-            </button>
-
             {/* Wallet address chip */}
             <div className="hidden md:flex items-center gap-2 px-4 py-2 rounded-full bg-black/5 border border-black/5">
               <div className="w-2 h-2 rounded-full bg-brand-safe" />
@@ -195,6 +193,9 @@ function AuthenticatedApp() {
               isRefreshing={isRefreshing}
               agentStatus={agentStatus}
               auditLog={auditLog}
+              solBalance={solBalance}
+              isBalanceLoading={balanceLoading}
+              activeRuleCount={activeRuleCount}
               onRefresh={handleRefresh}
               onNavigateToRules={() => setActiveView('rules-list')}
               onNavigateToAudit={() => setActiveView('audit-log')}
@@ -228,25 +229,38 @@ function AuthenticatedApp() {
         </AnimatePresence>
       </main>
 
-      {/* Status Footer */}
-      <div className="fixed bottom-10 left-1/2 -translate-x-1/2 flex items-center gap-4 px-8 py-4 rounded-full bg-brand-ink text-white shadow-[0_20px_50px_rgba(0,0,0,0.3)] z-[100] border border-white/10 glass max-w-[90vw]">
-        <div
-          className={`w-2.5 h-2.5 rounded-full ${agentStatus === AgentStatus.ACTIVE ? 'bg-brand-safe animate-pulse' : 'bg-brand-stop'}`}
-        />
-        <div className="flex flex-col">
-          <span className="text-[10px] font-extrabold uppercase tracking-widest leading-none">
-            Agent Wallet
-          </span>
-          <span className="text-[9px] font-mono text-white/40 tracking-tighter">
-            {agentPubkey} • Secure Link
+      {/* Status footer — light bar for contrast on brand-bg */}
+      <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[100] flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-5 px-5 sm:px-7 py-4 rounded-3xl bg-white text-brand-ink shadow-[0_12px_48px_rgba(0,0,0,0.12)] ring-1 ring-black/[0.06] w-[min(640px,calc(100vw-2rem))] max-w-[95vw]">
+        <div className="flex items-center gap-3 shrink-0">
+          <div
+            className={`w-2.5 h-2.5 rounded-full shrink-0 ${agentStatus === AgentStatus.ACTIVE ? 'bg-brand-safe animate-pulse' : 'bg-brand-stop'}`}
+          />
+          <span className="text-[11px] font-extrabold text-black/50 uppercase tracking-widest whitespace-nowrap">
+            {activeRuleCount} active rule{activeRuleCount !== 1 ? 's' : ''}
           </span>
         </div>
-        <div className="h-6 w-px bg-white/20 mx-2" />
-        <div className="flex items-center gap-3">
-          <ShieldAlert size={16} className="text-brand-wait" />
-          <span className="text-[10px] font-bold text-white/60 uppercase">
-            {rules.filter((r) => r.status === 'active').length} Active Rules
+        <div className="hidden sm:block h-8 w-px bg-black/[0.08] shrink-0" />
+        <div className="flex-1 min-w-0 pt-1 border-t border-black/[0.06] sm:border-t-0 sm:pt-0">
+          <span className="text-[9px] font-extrabold uppercase tracking-widest text-black/35 block mb-1.5">
+            Agent wallet (fund devnet SOL)
           </span>
+          {agentPubkeyFull ? (
+            <div className="flex items-start gap-2">
+              <code className="text-[11px] font-mono text-black/85 break-all leading-snug flex-1 select-all">
+                {agentPubkeyFull}
+              </code>
+              <button
+                type="button"
+                onClick={() => void copyFooterAgentAddress()}
+                className="shrink-0 p-2 rounded-xl bg-brand-ink text-white hover:bg-black transition-colors"
+                title="Copy address"
+              >
+                {footerAgentCopied ? <Check size={14} className="text-brand-safe" /> : <Copy size={14} />}
+              </button>
+            </div>
+          ) : (
+            <span className="text-[10px] text-black/35 font-mono">Provisioning…</span>
+          )}
         </div>
       </div>
     </div>

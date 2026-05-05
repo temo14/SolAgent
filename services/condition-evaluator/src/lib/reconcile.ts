@@ -1,20 +1,29 @@
 import type { FastifyBaseLogger } from 'fastify';
 import type { ExecJobPayload, SolAgentRule } from '@solagent/shared';
-import { RECONCILIATION_INTERVAL_MS } from '@solagent/shared';
+import {
+  CRON_RECONCILIATION_INTERVAL_MS,
+  RECONCILIATION_INTERVAL_MS,
+} from '@solagent/shared';
 import { getPrisma } from './prisma.js';
 import { getExecQueue } from './queue.js';
 import { evaluateTrigger, computeIdempotencyKey } from './evaluate.js';
 
+type ReconcileMode = 'standard' | 'cron';
+
+function includeRuleForMode(parsedRule: SolAgentRule, mode: ReconcileMode): boolean {
+  const isCron = parsedRule.trigger.type === 'time_cron';
+  return mode === 'cron' ? isCron : !isCron;
+}
+
 /**
- * Performs one reconciliation pass: loads all ACTIVE rules and evaluates
- * their trigger conditions without relying on a webhook event.
+ * Performs one reconciliation pass: evaluates ACTIVE rules on the polling path (no webhook).
  *
- * This is the safety-net fallback (spec §EVENT_DRIVEN_PRIMARY_POLLING_FALLBACK).
- * It runs every 5 minutes. The primary path is webhook-driven.
+ * `standard` (every 5 min): balance_above/below, price_*, outflow_exceeded — safety net beside webhooks.
+ * `cron` (every 60 s): `time_cron` only — minute-aligned idempotency (see evaluate.ts).
  */
-async function runReconciliation(log: FastifyBaseLogger): Promise<void> {
+async function runReconciliation(log: FastifyBaseLogger, mode: ReconcileMode): Promise<void> {
   const start = Date.now();
-  log.info('Reconciliation: starting pass');
+  log.info({ mode }, 'Reconciliation: starting pass');
 
   const prisma = getPrisma();
 
@@ -26,12 +35,19 @@ async function runReconciliation(log: FastifyBaseLogger): Promise<void> {
     },
   });
 
-  log.info({ ruleCount: rules.length }, 'Reconciliation: evaluating rules');
+  const filtered = rules.filter((rule) =>
+    includeRuleForMode(rule.parsedRule as unknown as SolAgentRule, mode),
+  );
+
+  log.info(
+    { ruleCount: filtered.length, totalActive: rules.length, mode },
+    'Reconciliation: evaluating rules',
+  );
 
   let dispatched = 0;
   let skipped = 0;
 
-  for (const rule of rules) {
+  for (const rule of filtered) {
     // Daily fire limit check
     if (rule.firesToday >= rule.maxFiresDay) {
       skipped++;
@@ -92,25 +108,38 @@ async function runReconciliation(log: FastifyBaseLogger): Promise<void> {
 
   const elapsed = Date.now() - start;
   log.info(
-    { dispatched, skipped, totalRules: rules.length, elapsedMs: elapsed },
+    { dispatched, skipped, evaluated: filtered.length, mode, elapsedMs: elapsed },
     'Reconciliation: pass complete',
   );
 }
 
 /**
- * Starts the 5-minute reconciliation loop.
- * Runs immediately on startup, then on the configured interval.
- * Returns the interval handle so callers can clear it on shutdown.
+ * Starts both reconciliation loops:
+ * - standard: 5 min (non-cron triggers)
+ * - cron: 60 s (`time_cron` only)
+ * Returns `[standardTimer, cronTimer]` for graceful shutdown (both clears).
  */
-export function startReconciliationLoop(log: FastifyBaseLogger): ReturnType<typeof setInterval> {
-  // Run once immediately so the service is useful right after restart
-  void runReconciliation(log).catch((err: unknown) => {
-    log.error({ err }, 'Reconciliation: initial run failed');
+export function startReconciliationLoop(
+  log: FastifyBaseLogger,
+): [ReturnType<typeof setInterval>, ReturnType<typeof setInterval>] {
+  void runReconciliation(log, 'standard').catch((err: unknown) => {
+    log.error({ err }, 'Reconciliation: initial standard pass failed');
+  });
+  void runReconciliation(log, 'cron').catch((err: unknown) => {
+    log.error({ err }, 'Reconciliation: initial cron pass failed');
   });
 
-  return setInterval(() => {
-    void runReconciliation(log).catch((err: unknown) => {
-      log.error({ err }, 'Reconciliation: scheduled run failed');
+  const standardTimer = setInterval(() => {
+    void runReconciliation(log, 'standard').catch((err: unknown) => {
+      log.error({ err }, 'Reconciliation: standard scheduled run failed');
     });
   }, RECONCILIATION_INTERVAL_MS);
+
+  const cronTimer = setInterval(() => {
+    void runReconciliation(log, 'cron').catch((err: unknown) => {
+      log.error({ err }, 'Reconciliation: cron scheduled run failed');
+    });
+  }, CRON_RECONCILIATION_INTERVAL_MS);
+
+  return [standardTimer, cronTimer];
 }

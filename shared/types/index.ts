@@ -86,6 +86,19 @@ export const TriggerSchema = z.object({
   threshold: z.number(),
   cron_expression: z.string().optional(),
   window_seconds: z.number().optional(),
+  /**
+   * UTC hour (0–23) at which a time_cron rule stops firing.
+   * Evaluated as: do not fire if utcHour >= until_utc_hour.
+   * Use when user explicitly mentions UTC/Zulu.
+   */
+  until_utc_hour: z.number().int().min(0).max(23).optional(),
+  /**
+   * Local wall-clock hour (0–23) in `schedule_timezone` when firing stops for time_cron.
+   * Prefer this for "until 4 PM" without saying UTC — matches the user's timezone.
+   */
+  until_local_hour: z.number().int().min(0).max(23).optional(),
+  /** IANA zone (e.g. Asia/Tbilisi) — set server-side from the client when creating the rule */
+  schedule_timezone: z.string().min(2).max(80).optional(),
 });
 
 export const ActionSchema = z.object({

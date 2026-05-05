@@ -63,6 +63,7 @@ function mapAuditEvent(ev: BackendAuditEvent): AuditLogEntry {
     action: {
       label: actionLabel,
       txHash: shortSig,
+      txSignatureFull: sig,
       status:
         ev.eventType === 'EXECUTION_CONFIRMED'
           ? 'success'
@@ -72,8 +73,8 @@ function mapAuditEvent(ev: BackendAuditEvent): AuditLogEntry {
     },
     details: {
       gasUsed: '–',
-      slippage: act?.price_used ? `$${act.price_used.toFixed(4)}` : '–',
-      route: act?.price_src ? [act.price_src] : ['–'],
+      oraclePrice: act?.price_used ? `$${act.price_used.toFixed(4)}` : '–',
+      priceSources: act?.price_src ? [act.price_src] : [],
       riskScore: ev.isAnomalous ? 'med' : 'low',
     },
   };

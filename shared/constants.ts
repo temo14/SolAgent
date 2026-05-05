@@ -38,8 +38,11 @@ export const PRICE_DEVIATION_THRESHOLD = 0.01;
 /** Transaction confirmation timeout in ms — no auto-retry after this */
 export const TX_CONFIRMATION_TIMEOUT_MS = 60_000;
 
-/** Fallback reconciliation loop interval (safety net only) */
+/** Fallback reconciliation loop interval (balance / price / outflow — webhook safety net) */
 export const RECONCILIATION_INTERVAL_MS = 5 * 60 * 1_000;
+
+/** Dedicated poll tick for `time_cron` rules (minute-granularity idempotency) */
+export const CRON_RECONCILIATION_INTERVAL_MS = 60 * 1_000;
 
 /** Re-queue delay after price deviation abort */
 export const PRICE_DEV_REQUEUE_DELAY_MS = 60_000;
@@ -55,8 +58,12 @@ export const DEFAULT_DAILY_LIMIT_USD = 1_000;
 
 // ─── BullMQ Queue Configuration ───────────────────────────────────────────────
 
-/** Queue name for execution jobs: exec:<first-8-chars-of-walletPubkey> */
+/** Prefix for BullMQ execution queue (`exec-<first-8 pubkey>` — no ':'; BullMQ forbids colons) */
 export const EXEC_QUEUE_PREFIX = 'exec';
+
+export function execQueueName(agentWalletPubkey: string): string {
+  return `${EXEC_QUEUE_PREFIX}-${agentWalletPubkey.slice(0, 8)}`;
+}
 
 /** Only one execution job per wallet queue at a time */
 export const EXEC_QUEUE_CONCURRENCY = 1;

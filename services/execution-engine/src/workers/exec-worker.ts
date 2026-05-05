@@ -5,7 +5,7 @@ import { Prisma } from '@prisma/client';
 import type { FastifyBaseLogger } from 'fastify';
 
 import {
-  EXEC_QUEUE_PREFIX,
+  execQueueName,
   EXEC_QUEUE_CONCURRENCY,
   PRICE_DEVIATION_THRESHOLD,
   PRICE_DEV_REQUEUE_DELAY_MS,
@@ -180,7 +180,7 @@ async function processExecJob(job: Job<ExecJobPayload>, log: FastifyBaseLogger):
 
         // Re-queue exactly once (only on the first attempt, not the retry).
         if (!isRetry) {
-          const queueName = `${EXEC_QUEUE_PREFIX}:${walletPubkey.slice(0, 8)}`;
+          const queueName = execQueueName(agentWallet.pubkey);
           const retryQueue = new Queue(queueName, { connection: getRedisOpts() });
           await retryQueue.add(
             'execute',
@@ -386,7 +386,7 @@ export async function startWorkerRegistry(log: FastifyBaseLogger): Promise<void>
   });
 
   for (const w of wallets) {
-    ensureWorkerForQueue(`${EXEC_QUEUE_PREFIX}:${w.pubkey.slice(0, 8)}`, log);
+    ensureWorkerForQueue(execQueueName(w.pubkey), log);
   }
 
   log.info({ count: wallets.length }, 'Execution workers bootstrapped');
@@ -403,7 +403,7 @@ export async function startWorkerRegistry(log: FastifyBaseLogger): Promise<void>
     try {
       const { agentWalletPubkey } = JSON.parse(message) as { agentWalletPubkey?: string };
       if (!agentWalletPubkey) return;
-      const queueName = `${EXEC_QUEUE_PREFIX}:${agentWalletPubkey.slice(0, 8)}`;
+      const queueName = execQueueName(agentWalletPubkey);
       ensureWorkerForQueue(queueName, log);
     } catch {
       // ignore malformed messages

@@ -1,10 +1,13 @@
 // shared/prisma/schema.prisma
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
   // Monorepo: generate into the hoisted node_modules so all workspace packages
   // can import @prisma/client and get the generated types.
-  output   = "../../node_modules/.prisma/client"
+  output        = "../../node_modules/.prisma/client"
+  // Explicit targets: "native" covers local dev/CI; "linux-musl-openssl-3.0.x"
+  // covers all service containers (node:22-alpine + openssl 3.x).
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
@@ -39,6 +42,8 @@ model User {
   lastSeenAt     DateTime?     @map("last_seen_at")
   dailyLimitUsd  Decimal       @default(1000) @map("daily_limit_usd") @db.Decimal(18, 6)
   isActive       Boolean       @default(true) @map("is_active")
+  /// IANA timezone from browser — used for time_cron "until PM" local interpretation
+  timezone       String        @default("UTC")
   agentWallets   AgentWallet[]
   rules          Rule[]
 

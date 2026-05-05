@@ -3,6 +3,8 @@ import {
   useContext,
   useState,
   useCallback,
+  useEffect,
+  useRef,
   type ReactNode,
 } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
@@ -37,6 +39,11 @@ export interface AuthState {
   clearError: () => void;
 }
 
+// ─── Dev bypass ───────────────────────────────────────────────────────────────
+
+const DEV_WALLET = (import.meta.env.VITE_DEV_WALLET as string | undefined)?.trim();
+const IS_DEV_BYPASS = Boolean(DEV_WALLET && import.meta.env.DEV);
+
 // ─── Context ──────────────────────────────────────────────────────────────────
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -53,6 +60,57 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isSigning, setIsSigning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const devBypassStarted = useRef(false);
+
+  useEffect(() => {
+    if (!IS_DEV_BYPASS || jwt) return;
+    if (devBypassStarted.current) return;
+    devBypassStarted.current = true;
+
+    void (async () => {
+      setError(null);
+      setIsSigning(true);
+      try {
+        const nonceRes = await api.get<{
+          ok: boolean;
+          data: { nonce: string; issuedAt: string; expiresAt: string };
+        }>(`/api/auth/nonce?wallet=${encodeURIComponent(DEV_WALLET!)}`);
+
+        if (!nonceRes.ok) throw new Error('Dev bypass: nonce failed');
+        const { nonce, issuedAt, expiresAt } = nonceRes.data;
+
+        const verifyRes = await api.post<{
+          ok: boolean;
+          data: { token: string; walletPubkey: string };
+        }>('/api/auth/dev-bypass', {
+          walletPubkey: DEV_WALLET,
+          nonce,
+          issuedAt,
+          expiresAt,
+        });
+
+        if (!verifyRes.ok) throw new Error('Dev bypass: verify failed');
+        const { token } = verifyRes.data;
+
+        setWalletPubkey(DEV_WALLET!);
+        setJwt(token);
+
+        const wallets = await loadOrCreateAgentWallet(token);
+        setAgentWallets(wallets);
+      } catch (err) {
+        devBypassStarted.current = false;
+        if (err instanceof ApiError) {
+          const body = err.body as { message?: string } | null;
+          setError(body?.message ?? `Dev bypass error (${err.status})`);
+        } else {
+          setError(err instanceof Error ? err.message : 'Dev bypass failed');
+        }
+      } finally {
+        setIsSigning(false);
+      }
+    })();
+  }, [jwt]);
+
   const signIn = useCallback(async () => {
     if (!publicKey || !signMessage) {
       setError('No wallet connected. Please connect a wallet first.');
@@ -65,16 +123,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const pubkey = publicKey.toBase58();
 
     try {
-      // ── Step 1: Fetch nonce ─────────────────────────────────────────────────
       const nonceRes = await api.get<{
         ok: boolean;
         data: { nonce: string; issuedAt: string; expiresAt: string };
-      }>(`/api/auth/nonce?wallet=${pubkey}`);
+      }>(`/api/auth/nonce?wallet=${encodeURIComponent(pubkey)}`);
 
       if (!nonceRes.ok) throw new Error('Failed to obtain sign-in nonce.');
       const { nonce, issuedAt, expiresAt } = nonceRes.data;
 
-      // ── Step 2: Build + sign SIWS message ───────────────────────────────────
       const message = buildSiwsMessage({
         domain: window.location.host,
         walletPubkey: pubkey,
@@ -86,7 +142,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const signature = await signMessage(msgBytes);
       const signatureBase64 = uint8ToBase64(signature);
 
-      // ── Step 3: Verify signature → receive JWT ──────────────────────────────
       const verifyRes = await api.post<{
         ok: boolean;
         data: { token: string; walletPubkey: string };
@@ -103,7 +158,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setWalletPubkey(pubkey);
       setJwt(token);
 
-      // ── Step 4: Load or auto-create the primary agent wallet ─────────────────
       const wallets = await loadOrCreateAgentWallet(token);
       setAgentWallets(wallets);
     } catch (err) {
@@ -119,7 +173,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [publicKey, signMessage]);
 
   const disconnect = useCallback(() => {
-    walletDisconnect().catch(() => undefined);
+    if (!IS_DEV_BYPASS) {
+      walletDisconnect().catch(() => undefined);
+    } else {
+      devBypassStarted.current = false;
+    }
     setWalletPubkey(null);
     setJwt(null);
     setAgentWallets([]);
@@ -158,13 +216,34 @@ export function useAuth(): AuthState {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+function normalizeAgentWallets(data: unknown): AgentWalletInfo[] {
+  if (!data) return [];
+  const raw = Array.isArray(data) ? data : (data as { wallets?: unknown }).wallets;
+  if (!Array.isArray(raw)) return [];
+
+  return raw.map((item) => {
+    const w = item as {
+      id: string;
+      pubkey: string;
+      isActive?: boolean;
+      label?: string | null;
+    };
+    return {
+      id: w.id,
+      pubkey: w.pubkey,
+      label: w.label ?? null,
+      isActive: w.isActive ?? true,
+    };
+  });
+}
+
 async function loadOrCreateAgentWallet(jwt: string): Promise<AgentWalletInfo[]> {
   const listRes = await api.get<{
     ok: boolean;
-    data: { wallets: AgentWalletInfo[] };
+    data: AgentWalletInfo[] | { wallets: AgentWalletInfo[] };
   }>('/api/agent-wallets', jwt);
 
-  const wallets: AgentWalletInfo[] = listRes.ok ? (listRes.data.wallets ?? []) : [];
+  const wallets: AgentWalletInfo[] = listRes.ok ? normalizeAgentWallets(listRes.data) : [];
 
   if (wallets.length === 0) {
     try {
@@ -173,7 +252,17 @@ async function loadOrCreateAgentWallet(jwt: string): Promise<AgentWalletInfo[]> 
         { label: 'Primary Agent' },
         jwt,
       );
-      if (createRes.ok) return [createRes.data];
+      if (createRes.ok) {
+        const d = createRes.data;
+        return [
+          {
+            id: d.id,
+            pubkey: d.pubkey,
+            label: d.label ?? null,
+            isActive: d.isActive,
+          },
+        ];
+      }
     } catch {
       // non-fatal — user can create manually later
     }

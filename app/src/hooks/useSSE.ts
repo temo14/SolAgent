@@ -32,8 +32,11 @@ export function useSSE(jwt: string | null, onResult: (result: ExecResult) => voi
 
     es.onmessage = (e) => {
       try {
-        const data = JSON.parse(e.data as string) as ExecResult;
-        onResultRef.current(data);
+        // Gateway wraps every event: { type: 'exec_result' | 'connected', data: ExecResult }
+        const frame = JSON.parse(e.data as string) as { type: string; data?: ExecResult };
+        if (frame.type === 'exec_result' && frame.data) {
+          onResultRef.current(frame.data);
+        }
       } catch {
         // ignore malformed frames
       }

@@ -1,6 +1,6 @@
 import { Queue } from 'bullmq';
 import IORedis from 'ioredis';
-import { EXEC_QUEUE_PREFIX } from '@solagent/shared';
+import { execQueueName } from '@solagent/shared';
 
 let connection: IORedis | null = null;
 const queueCache = new Map<string, Queue>();
@@ -21,11 +21,11 @@ function getConnection(): IORedis {
 
 /**
  * Returns (or creates) the BullMQ Queue for a wallet.
- * Queue name: exec:<first-8-chars-of-walletPubkey>
+ * Queue name: exec-<first-8-chars-of-agentWalletPubkey>
  * Concurrency = 1 is enforced by the Worker in execution-engine.
  */
 export function getExecQueue(walletPubkey: string): Queue {
-  const name = `${EXEC_QUEUE_PREFIX}:${walletPubkey.slice(0, 8)}`;
+  const name = execQueueName(walletPubkey);
   let q = queueCache.get(name);
   if (q === undefined) {
     q = new Queue(name, {
