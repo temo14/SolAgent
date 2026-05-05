@@ -64,13 +64,22 @@ export async function getPythPriceUsd(asset: string): Promise<number> {
  * Checks the dual-oracle price deviation between Jupiter and Pyth.
  * Returns the deviation ratio (0–1). Caller aborts if > 0.01 (1%).
  *
- * Both prices must represent the same quantity: USD per 1 unit of `fromAsset`.
+ * Computes Jupiter's implied USD price of fromAsset as:
+ *   (outHuman × pythToPrice) / inHuman
+ * then compares it against Pyth's direct price of fromAsset.
+ * This works correctly for all swap pairs, not just stable-to-stable.
  */
 export async function dualOracleCheck(
   fromAsset: string,
-  jupiterPriceUsd: number,
+  toAsset: string,
+  inHuman: number,
+  outHuman: number,
 ): Promise<{ pythPriceUsd: number; deviation: number }> {
-  const pythPriceUsd = await getPythPriceUsd(fromAsset);
-  const deviation = Math.abs(jupiterPriceUsd - pythPriceUsd) / pythPriceUsd;
-  return { pythPriceUsd, deviation };
+  const [pythFromPrice, pythToPrice] = await Promise.all([
+    getPythPriceUsd(fromAsset),
+    getPythPriceUsd(toAsset),
+  ]);
+  const jupiterImpliedFromPrice = (outHuman * pythToPrice) / inHuman;
+  const deviation = Math.abs(jupiterImpliedFromPrice - pythFromPrice) / pythFromPrice;
+  return { pythPriceUsd: pythFromPrice, deviation };
 }

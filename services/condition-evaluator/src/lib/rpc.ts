@@ -41,10 +41,12 @@ async function rpcPost<T>(method: string, params: unknown[]): Promise<T> {
 }
 
 /**
- * Returns the SOL balance of a pubkey in lamports.
- * Uses confirmed commitment for recency.
+ * Returns the SOL balance of a pubkey in lamports (NOT SOL units).
+ * Callers must divide by LAMPORTS_PER_SOL to get SOL.
+ * Named explicitly to prevent confusion with execution-engine's getSolBalance,
+ * which returns SOL units directly via @solana/web3.js Connection.getBalance.
  */
-export async function getSolBalance(pubkey: string): Promise<number> {
+export async function getSolBalanceLamports(pubkey: string): Promise<number> {
   const result = await rpcPost<{ value: number }>('getBalance', [
     pubkey,
     { commitment: 'confirmed' },

@@ -1,4 +1,5 @@
 import Fastify, { FastifyInstance } from 'fastify';
+import fastifyJwt from '@fastify/jwt';
 import { auditRoutes } from './routes/audit.js';
 import { startIndexerWorker } from './workers/indexer.js';
 import { disconnectPrisma } from './lib/prisma.js';
@@ -16,6 +17,15 @@ function buildServer(): FastifyInstance {
     },
   });
 
+  const jwtSecret = process.env.JWT_SECRET;
+  if (!jwtSecret || jwtSecret.length < 32) {
+    throw new Error('JWT_SECRET env var must be at least 32 characters');
+  }
+  server.register(fastifyJwt, {
+    secret: jwtSecret,
+    sign: { algorithm: 'HS256', expiresIn: '24h' },
+  });
+
   server.get('/health', async (_req, reply) => {
     return reply.send({
       status: 'ok',
@@ -24,7 +34,6 @@ function buildServer(): FastifyInstance {
     });
   });
 
-  // Public audit-trail API (no auth required — verifiable by anyone)
   server.register(auditRoutes);
 
   return server;

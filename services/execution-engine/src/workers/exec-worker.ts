@@ -1,4 +1,4 @@
-import { Job, Queue, Worker, QueueEvents } from 'bullmq';
+import { Job, Worker, QueueEvents } from 'bullmq';
 import IORedis from 'ioredis';
 import { Keypair } from '@solana/web3.js';
 import { Prisma } from '@prisma/client';
@@ -30,6 +30,7 @@ import { dualOracleCheck } from '../lib/pyth.js';
 import { buildMemoProof, buildMemoInstruction } from '../lib/memo.js';
 import { isCircuitBreakerTripped, triggerCircuitBreaker } from '../lib/circuit-breaker.js';
 import { publishExecResult } from '../lib/redis.js';
+import { getExecQueue } from '../lib/queue.js';
 
 /** Minimum SOL balance the agent wallet must retain after fees (0.01 SOL). */
 const MINIMUM_SOL_RESERVE = 0.01;
@@ -147,7 +148,6 @@ async function processExecJob(job: Job<ExecJobPayload>, log: FastifyBaseLogger):
     const { action } = parsedRule;
 
     // ── 6. Dual-oracle price check for SWAP actions ─────────────────────────
-    let jupiterPriceUsd: number | undefined;
     let pythPriceUsd: number | undefined;
     let priceDeviation: number | undefined;
     let savedQuoteResponse: Awaited<ReturnType<typeof getJupiterQuote>>['quoteResponse'] | undefined;
@@ -159,20 +159,23 @@ async function processExecJob(job: Job<ExecJobPayload>, log: FastifyBaseLogger):
         action.amount,
         action.max_slippage_bps,
       );
-      jupiterPriceUsd = quoteResult.jupiterPriceUsd;
       savedQuoteResponse = quoteResult.quoteResponse;
 
-      const oracleResult = await dualOracleCheck(action.from_asset, jupiterPriceUsd);
+      const oracleResult = await dualOracleCheck(
+        action.from_asset,
+        action.to_asset,
+        quoteResult.inHuman,
+        quoteResult.outHuman,
+      );
       pythPriceUsd = oracleResult.pythPriceUsd;
       priceDeviation = oracleResult.deviation;
 
       if (priceDeviation > PRICE_DEVIATION_THRESHOLD) {
         log.warn(
-          { ruleId, jupiterPriceUsd, pythPriceUsd, priceDeviation },
+          { ruleId, pythPriceUsd, priceDeviation },
           'Price deviation exceeds threshold',
         );
         await setStatus('PRICE_DEVIATION_ABORT', {
-          jupiterPrice: jupiterPriceUsd,
           pythPrice: pythPriceUsd,
           priceDeviation,
           errorCode: 'EXEC_PRICE_DEVIATION',
@@ -180,8 +183,7 @@ async function processExecJob(job: Job<ExecJobPayload>, log: FastifyBaseLogger):
 
         // Re-queue exactly once (only on the first attempt, not the retry).
         if (!isRetry) {
-          const queueName = execQueueName(agentWallet.pubkey);
-          const retryQueue = new Queue(queueName, { connection: getRedisOpts() });
+          const retryQueue = getExecQueue(agentWallet.pubkey);
           await retryQueue.add(
             'execute',
             { ...job.data, isRetry: true } satisfies ExecJobPayload,
@@ -191,7 +193,6 @@ async function processExecJob(job: Job<ExecJobPayload>, log: FastifyBaseLogger):
               attempts: 1,
             },
           );
-          await retryQueue.close();
           log.info({ ruleId, delay: PRICE_DEV_REQUEUE_DELAY_MS }, 'Price-deviation retry queued');
         } else {
           log.warn({ ruleId }, 'Price deviation on retry — marking FAILED');
@@ -242,8 +243,8 @@ async function processExecJob(job: Job<ExecJobPayload>, log: FastifyBaseLogger):
       parsedRule,
       triggerSlot,
       observedValue,
-      priceUsed: jupiterPriceUsd,
-      priceSrc: jupiterPriceUsd !== undefined ? 'jupiter+pyth' : 'none',
+      priceUsed: pythPriceUsd,
+      priceSrc: pythPriceUsd !== undefined ? 'jupiter+pyth' : 'none',
     });
     const memoIx = buildMemoInstruction(memoProof, keypair.publicKey);
 
@@ -321,7 +322,6 @@ async function processExecJob(job: Job<ExecJobPayload>, log: FastifyBaseLogger):
           txSignature: signature,
           memoJson: memoProof as unknown as Prisma.InputJsonValue,
           confirmedAt: new Date(),
-          jupiterPrice: jupiterPriceUsd,
           pythPrice: pythPriceUsd,
           priceDeviation,
         },

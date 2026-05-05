@@ -54,11 +54,16 @@ export function mapBackendRule(r: BackendRule): AutomationRule {
     ? `${t.asset} ${t.type.replace(/_/g, ' ')}`
     : 'Automation Rule';
 
+  const status =
+    r.status === 'ACTIVE' ? 'active' :
+    r.status === 'PAUSED_CIRCUIT_BREAKER' ? 'circuit_breaker' :
+    'inactive';
+
   return {
     id: r.id,
     name,
     description: r.rawInput,
-    status: r.status === 'ACTIVE' ? 'active' : 'inactive',
+    status,
     lastRun: r.activatedAt
       ? new Date(r.activatedAt).toLocaleDateString()
       : 'Never',
@@ -169,33 +174,29 @@ export function useRules() {
     [jwt],
   );
 
-  /** Emergency stop: pauses all currently active rules. */
+  /** Emergency stop: pauses all currently active rules. Re-fetches to reflect true backend state. */
   const pauseAllRules = useCallback(async (): Promise<void> => {
     if (!jwt) return;
     const active = rulesRef.current.filter((r) => r.status === 'active');
-    await Promise.all(
+    await Promise.allSettled(
       active.map((r) =>
-        api
-          .patch(`/api/rules/${r.id}/status`, { status: 'PAUSED' }, jwt)
-          .catch(() => undefined),
+        api.patch(`/api/rules/${r.id}/status`, { status: 'PAUSED' }, jwt),
       ),
     );
-    setRules((prev) => prev.map((r) => ({ ...r, status: 'inactive' as const })));
-  }, [jwt]);
+    await fetchRules();
+  }, [jwt, fetchRules]);
 
-  /** Resumes all paused rules. */
+  /** Resumes all normally-paused rules. Skips circuit_breaker rules — those require manual review. */
   const resumeAllRules = useCallback(async (): Promise<void> => {
     if (!jwt) return;
     const paused = rulesRef.current.filter((r) => r.status === 'inactive');
-    await Promise.all(
+    await Promise.allSettled(
       paused.map((r) =>
-        api
-          .patch(`/api/rules/${r.id}/status`, { status: 'ACTIVE' }, jwt)
-          .catch(() => undefined),
+        api.patch(`/api/rules/${r.id}/status`, { status: 'ACTIVE' }, jwt),
       ),
     );
-    setRules((prev) => prev.map((r) => ({ ...r, status: 'active' as const })));
-  }, [jwt]);
+    await fetchRules();
+  }, [jwt, fetchRules]);
 
   return {
     rules,

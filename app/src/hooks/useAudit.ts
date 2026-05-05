@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
 import type { AuditLogEntry } from '../types';
 
 // ─── Backend shapes ───────────────────────────────────────────────────────────
@@ -83,15 +84,17 @@ function mapAuditEvent(ev: BackendAuditEvent): AuditLogEntry {
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useAudit(walletPubkey: string | null) {
+  const { jwt } = useAuth();
   const [auditLog, setAuditLog] = useState<AuditLogEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
   const fetchAudit = useCallback(async () => {
-    if (!walletPubkey) return;
+    if (!walletPubkey || !jwt) return;
     setIsLoading(true);
     try {
       const res = await api.get<{ events: BackendAuditEvent[]; total: number }>(
         `/api/audit/${walletPubkey}?limit=50`,
+        jwt,
       );
       setAuditLog((res.events ?? []).map(mapAuditEvent));
     } catch {
@@ -99,7 +102,7 @@ export function useAudit(walletPubkey: string | null) {
     } finally {
       setIsLoading(false);
     }
-  }, [walletPubkey]);
+  }, [walletPubkey, jwt]);
 
   useEffect(() => {
     void fetchAudit();

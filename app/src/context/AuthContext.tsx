@@ -61,10 +61,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   const devBypassStarted = useRef(false);
+  const devBypassLoggedOut = useRef(false);
 
   useEffect(() => {
     if (!IS_DEV_BYPASS || jwt) return;
     if (devBypassStarted.current) return;
+    if (devBypassLoggedOut.current) return;
     devBypassStarted.current = true;
 
     void (async () => {
@@ -177,6 +179,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       walletDisconnect().catch(() => undefined);
     } else {
       devBypassStarted.current = false;
+      devBypassLoggedOut.current = true;
     }
     setWalletPubkey(null);
     setJwt(null);

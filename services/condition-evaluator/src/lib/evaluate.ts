@@ -4,7 +4,7 @@ import {
   getHourInTimeZone,
   isValidIanaTimeZone,
 } from '@solagent/shared';
-import { getSolBalance, getCurrentSlot, LAMPORTS_PER_SOL } from './rpc.js';
+import { getSolBalanceLamports, getCurrentSlot, LAMPORTS_PER_SOL } from './rpc.js';
 import { getAssetPriceUsd } from './price.js';
 import { getPrisma } from './prisma.js';
 
@@ -77,7 +77,7 @@ export async function evaluateTrigger(
         // Token balance evaluation: TODO in Task 5 (requires getParsedTokenAccountsByOwner)
         return NOT_MATCHED(eventSig, eventSlot);
       }
-      const lamports = await getSolBalance(agentPubkey);
+      const lamports = await getSolBalanceLamports(agentPubkey);
       const sol = lamports / LAMPORTS_PER_SOL;
       const matched =
         trigger.type === 'balance_below' ? sol < trigger.threshold : sol > trigger.threshold;
@@ -129,6 +129,7 @@ export async function evaluateTrigger(
       const prisma = getPrisma();
 
       // Sum confirmed outflow in the window from execution logs
+      // TODO: replace with a _sum aggregate once executedAmountUsd is a dedicated column.
       const logs = await prisma.executionLog.findMany({
         where: {
           ruleId: rule.id,
@@ -136,6 +137,7 @@ export async function evaluateTrigger(
           createdAt: { gte: windowStart },
         },
         select: { memoJson: true },
+        take: 1000,
       });
 
       let totalOutflow = 0;

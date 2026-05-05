@@ -2,8 +2,8 @@ import {
   hkdfSync,
   randomBytes,
   createCipheriv,
-  createDecipheriv,
 } from 'crypto';
+export { decryptAgentKeypair } from '@solagent/shared';
 
 const HKDF_INFO = Buffer.from('solAgent_agent_key');
 const KEY_LEN = 32;        // AES-256
@@ -83,27 +83,3 @@ export function encryptAgentKeypair(
   };
 }
 
-/**
- * Decrypts a stored agent keypair back to the raw 64-byte secret key.
- * Called by the execution engine at job-dispatch time.
- */
-export function decryptAgentKeypair(
-  encryptedKey: Buffer,
-  keyIv: Buffer,
-  userWalletPubkey: string,
-): Uint8Array {
-  if (keyIv.length < GCM_IV_LEN + HKDF_SALT_LEN) {
-    throw new Error('keyIv buffer too short — corrupted agent wallet record');
-  }
-  const iv = keyIv.subarray(0, GCM_IV_LEN);
-  const salt = keyIv.subarray(GCM_IV_LEN, GCM_IV_LEN + HKDF_SALT_LEN);
-  const key = deriveKey(userWalletPubkey, salt);
-
-  const authTag = encryptedKey.subarray(encryptedKey.length - GCM_TAG_LEN);
-  const ciphertext = encryptedKey.subarray(0, encryptedKey.length - GCM_TAG_LEN);
-
-  const decipher = createDecipheriv('aes-256-gcm', key, iv);
-  decipher.setAuthTag(authTag);
-
-  return Buffer.concat([decipher.update(ciphertext), decipher.final()]);
-}

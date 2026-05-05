@@ -41,12 +41,16 @@ function getConfig(): { apiKey: string; webhookUrl: string } {
   return { apiKey, webhookUrl };
 }
 
+/** Strips the api-key query param from a URL string before logging or throwing. */
+function redactApiKey(url: string): string {
+  return url.replace(/([?&])api-key=[^&]*/g, '$1api-key=REDACTED');
+}
+
 async function listWebhooks(apiKey: string): Promise<HeliusWebhook[]> {
-  const res = await fetch(`https://api.helius.xyz/v0/webhooks?api-key=${apiKey}`, {
-    signal: AbortSignal.timeout(15_000),
-  });
+  const url = `https://api.helius.xyz/v0/webhooks?api-key=${apiKey}`;
+  const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
   if (!res.ok) {
-    throw new Error(`Helius list webhooks error ${res.status}: ${await res.text()}`);
+    throw new Error(`Helius list webhooks error ${res.status}: ${await res.text()} (${redactApiKey(url)})`);
   }
   const body: unknown = await res.json();
   const parsed = HeliusWebhookListSchema.safeParse(body);
@@ -61,7 +65,8 @@ async function createWebhook(
   webhookUrl: string,
   agentWalletPubkey: string,
 ): Promise<void> {
-  const res = await fetch(`https://api.helius.xyz/v0/webhooks?api-key=${apiKey}`, {
+  const url = `https://api.helius.xyz/v0/webhooks?api-key=${apiKey}`;
+  const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -73,7 +78,7 @@ async function createWebhook(
     signal: AbortSignal.timeout(15_000),
   });
   if (!res.ok) {
-    throw new Error(`Helius create webhook error ${res.status}: ${await res.text()}`);
+    throw new Error(`Helius create webhook error ${res.status}: ${await res.text()} (${redactApiKey(url)})`);
   }
 }
 
@@ -87,21 +92,19 @@ async function appendAddressToWebhook(
   // avoids a needless network write.
   if (existing.accountAddresses.includes(agentWalletPubkey)) return;
 
-  const res = await fetch(
-    `https://api.helius.xyz/v0/webhooks/${webhookId}?api-key=${apiKey}`,
-    {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ...existing,
-        accountAddresses: [...existing.accountAddresses, agentWalletPubkey],
-      }),
-      signal: AbortSignal.timeout(15_000),
-    },
-  );
+  const url = `https://api.helius.xyz/v0/webhooks/${webhookId}?api-key=${apiKey}`;
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      ...existing,
+      accountAddresses: [...existing.accountAddresses, agentWalletPubkey],
+    }),
+    signal: AbortSignal.timeout(15_000),
+  });
   if (!res.ok) {
     throw new Error(
-      `Helius update webhook ${webhookId} error ${res.status}: ${await res.text()}`,
+      `Helius update webhook ${webhookId} error ${res.status}: ${await res.text()} (${redactApiKey(url)})`,
     );
   }
 }

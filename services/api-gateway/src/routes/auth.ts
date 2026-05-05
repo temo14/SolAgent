@@ -132,16 +132,14 @@ export async function authRoutes(server: FastifyInstance): Promise<void> {
 
   /**
    * POST /auth/dev-bypass
-   * Development only: skips Ed25519 verify after the same nonce check as `/verify`.
-   * Docker Compose defaults api-gateway NODE_ENV to production — set AUTH_DEV_BYPASS=true
-   * and AUTH_DEV_BYPASS_WALLET to the same base58 pubkey as VITE_DEV_WALLET on the client.
+   * Skips Ed25519 signature verification after the same nonce check as `/verify`.
+   * Requires AUTH_DEV_BYPASS=true and AUTH_DEV_BYPASS_WALLET to be set explicitly.
+   * Only the wallet matching AUTH_DEV_BYPASS_WALLET is allowed through.
    */
   server.post(
     '/dev-bypass',
     async (request: FastifyRequest, reply: FastifyReply) => {
-      const isNodeDev = process.env.NODE_ENV === 'development';
-      const bypassFlag = process.env.AUTH_DEV_BYPASS === 'true';
-      if (!isNodeDev && !bypassFlag) {
+      if (process.env.AUTH_DEV_BYPASS !== 'true') {
         return reply.status(404).send({ ok: false, message: 'Not found' });
       }
 
@@ -157,18 +155,10 @@ export async function authRoutes(server: FastifyInstance): Promise<void> {
       const { walletPubkey, nonce } = bodyParse.data;
       const allowlist = process.env.AUTH_DEV_BYPASS_WALLET?.trim();
 
-      if (bypassFlag) {
-        if (!allowlist) {
-          request.log.warn('AUTH_DEV_BYPASS is set but AUTH_DEV_BYPASS_WALLET is missing');
-          return reply.status(503).send({
-            ok: false,
-            message: 'Server misconfigured: AUTH_DEV_BYPASS_WALLET required when AUTH_DEV_BYPASS=true',
-          });
-        }
-        if (walletPubkey !== allowlist) {
-          return reply.status(403).send({ ok: false, message: 'Dev bypass pubkey not allowed' });
-        }
-      } else if (allowlist !== undefined && allowlist !== '' && walletPubkey !== allowlist) {
+      if (!allowlist) {
+        return reply.status(404).send({ ok: false, message: 'Not found' });
+      }
+      if (walletPubkey !== allowlist) {
         return reply.status(403).send({ ok: false, message: 'Dev bypass pubkey not allowed' });
       }
 

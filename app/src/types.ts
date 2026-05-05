@@ -9,7 +9,8 @@ export interface AutomationRule {
   id: string;
   name: string;
   description: string;
-  status: 'active' | 'inactive';
+  /** 'circuit_breaker' means PAUSED_CIRCUIT_BREAKER — requires investigation before re-activating. */
+  status: 'active' | 'inactive' | 'circuit_breaker';
   lastRun: string;
   executions: number;
   limits?: {

@@ -72,8 +72,10 @@ const DECIMALS: Record<string, number> = {
 
 export interface JupiterQuoteResult {
   quoteResponse: JupiterQuoteResponse;
-  /** Jupiter execution price: how many `to_asset` USD-equivalent per 1 `from_asset` */
-  jupiterPriceUsd: number;
+  /** Human-unit input amount (e.g. 10.0 USDC). Used by dual-oracle check. */
+  inHuman: number;
+  /** Human-unit output amount (e.g. 0.071 SOL). Used by dual-oracle check. */
+  outHuman: number;
 }
 
 /**
@@ -107,14 +109,10 @@ export async function getJupiterQuote(
   }
   const quoteResponse = (await res.json()) as JupiterQuoteResponse;
 
-  // Derive a USD-comparable price for the dual-oracle check.
-  // outAmount / inAmount expressed in the same "atom" ratio, then scaled by decimals.
   const inHuman = Number(quoteResponse.inAmount) / Math.pow(10, fromDecimals);
   const outHuman = Number(quoteResponse.outAmount) / Math.pow(10, toDecimals);
-  // If toAsset is a USD stablecoin, outHuman ≈ USD. Otherwise caller must factor in Pyth prices.
-  const jupiterPriceUsd = outHuman / inHuman;
 
-  return { quoteResponse, jupiterPriceUsd };
+  return { quoteResponse, inHuman, outHuman };
 }
 
 /**

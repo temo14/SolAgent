@@ -4,14 +4,16 @@ import { getPrisma } from '../lib/prisma.js';
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
 
-/**
- * Public audit-trail routes — no authentication required.
- * Anyone can verify on-chain memo proofs against this endpoint.
- */
+interface JwtPayload {
+  walletPubkey: string;
+  userId: string;
+}
+
 export async function auditRoutes(server: FastifyInstance): Promise<void> {
   /**
    * GET /audit/:walletPubkey
    * Paginated list of confirmed executions for a wallet.
+   * Requires a valid JWT whose walletPubkey matches the route param.
    */
   server.get<{
     Params: { walletPubkey: string };
@@ -35,7 +37,18 @@ export async function auditRoutes(server: FastifyInstance): Promise<void> {
       },
     },
     async (req, reply) => {
+      let jwtPayload: JwtPayload;
+      try {
+        jwtPayload = await req.jwtVerify<JwtPayload>();
+      } catch {
+        return reply.status(401).send({ ok: false, message: 'Authentication required' });
+      }
+
       const { walletPubkey } = req.params;
+      if (jwtPayload.walletPubkey !== walletPubkey) {
+        return reply.status(403).send({ ok: false, message: 'Forbidden' });
+      }
+
       const page = req.query.page ?? 1;
       const limit = Math.min(req.query.limit ?? DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
       const skip = (page - 1) * limit;

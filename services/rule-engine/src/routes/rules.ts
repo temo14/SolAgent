@@ -38,10 +38,20 @@ const ListQuerySchema = z.object({
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+function deepSortKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(deepSortKeys);
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.keys(value as object)
+        .sort()
+        .map((k) => [k, deepSortKeys((value as Record<string, unknown>)[k])]),
+    );
+  }
+  return value;
+}
+
 function computeRuleHash(parsedRule: unknown): string {
-  // Deterministic: sort keys before hashing
-  const canonical = JSON.stringify(parsedRule, Object.keys(parsedRule as object).sort());
-  return createHash('sha256').update(canonical).digest('hex');
+  return createHash('sha256').update(JSON.stringify(deepSortKeys(parsedRule))).digest('hex');
 }
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
