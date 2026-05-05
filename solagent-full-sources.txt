@@ -777,7 +777,7 @@ export const AuditCard = ({ entry, isExpanded, onToggle }: AuditCardProps) => {
 ################################################################################
 # FILE: app/src/components/auth/ConnectWallet.tsx
 ################################################################################
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { Fingerprint, ShieldCheck, AlertTriangle, Loader2, Smartphone, Puzzle } from 'lucide-react';
 import { useWallet } from '@solana/wallet-adapter-react';
@@ -799,9 +799,11 @@ export function ConnectWallet() {
     connected,
     publicKey,
     connecting,
+    signMessage,
   } = useWallet();
 
   const { isSigning, error, signIn, clearError } = useAuth();
+  const [walletConnectError, setWalletConnectError] = useState<string | null>(null);
 
   /**
    * Tracks whether the current wallet selection was triggered by the user
@@ -809,36 +811,60 @@ export function ConnectWallet() {
    * below would call walletConnect() on any ambient wallet change.
    */
   const pendingConnect = useRef(false);
+  /** Prevents overlapping signIn() calls (e.g. React StrictMode double effect). */
+  const signInFlight = useRef(false);
 
   // Step 2 of connection: once the adapter object changes (after select()),
   // open the wallet UI (Phantom popup or WalletConnect QR modal).
   useEffect(() => {
     if (!wallet || !pendingConnect.current) return;
-    walletConnect().catch(() => {
-      pendingConnect.current = false;
-    });
+    setWalletConnectError(null);
+    walletConnect()
+      .catch((err: unknown) => {
+        pendingConnect.current = false;
+        const msg =
+          err instanceof Error ? err.message : typeof err === 'string' ? err : 'Wallet connect failed';
+        setWalletConnectError(msg);
+      });
   // wallet.adapter.name is stable once selected — re-run only when the adapter changes.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wallet?.adapter.name]);
 
-  // Step 3: once the adapter reports connected + publicKey, run the SIWS flow.
+  // Step 3: after the adapter finishes connecting, require signMessage (SIWS) before sign-in.
+  // MetaMask can approve a WalletConnect session without exposing Solana signMessage — UI would otherwise hang silently.
   useEffect(() => {
-    if (!connected || !publicKey) return;
-    void signIn();
-  // signIn identity is stable (useCallback); publicKey/connected come from adapter.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connected, publicKey?.toBase58()]);
+    if (!connected || !publicKey) {
+      signInFlight.current = false;
+      return;
+    }
+    if (connecting) return;
+    if (!signMessage) {
+      setWalletConnectError(
+        'This wallet did not expose Solana message signing over WalletConnect. SolAgent needs a devnet wallet that supports solana_signMessage (Phantom, Backpack, or Solflare work well). MetaMask’s Solana + WalletConnect path is often incomplete.',
+      );
+      return;
+    }
+    setWalletConnectError(null);
+    if (signInFlight.current) return;
+    signInFlight.current = true;
+    void signIn().finally(() => {
+      signInFlight.current = false;
+    });
+  }, [connected, connecting, publicKey, signMessage, signIn]);
 
   const handleSelect = (name: WalletName) => {
     clearError();
+    setWalletConnectError(null);
     pendingConnect.current = true;
     select(name);
   };
 
   const handleDisconnect = () => {
     pendingConnect.current = false;
+    signInFlight.current = false;
     walletDisconnect().catch(() => undefined);
     clearError();
+    setWalletConnectError(null);
   };
 
   const isLoading = connecting || isSigning;
@@ -892,17 +918,21 @@ export function ConnectWallet() {
             ))}
           </div>
 
-          {/* Error */}
-          {error && (
+          {/* Error (auth + wallet adapter) */}
+          {(error ?? walletConnectError) && (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               className="flex items-start gap-3 p-4 rounded-2xl bg-red-50 border border-red-100"
             >
               <AlertTriangle size={16} className="text-brand-stop mt-0.5 shrink-0" />
-              <p className="text-xs font-bold text-brand-stop flex-1">{error}</p>
+              <p className="text-xs font-bold text-brand-stop flex-1">{error ?? walletConnectError}</p>
               <button
-                onClick={() => { clearError(); handleDisconnect(); }}
+                onClick={() => {
+                  clearError();
+                  setWalletConnectError(null);
+                  handleDisconnect();
+                }}
                 className="text-black/20 hover:text-black transition-colors text-xs font-bold"
               >
                 ✕
@@ -956,10 +986,11 @@ export function ConnectWallet() {
                   )}
                 </motion.button>
                 <p className="text-[10px] text-black/45 font-medium leading-relaxed px-1">
-                  After the QR appears: open <span className="font-bold text-black/60">Phantom</span> (or your
-                  wallet) → <span className="font-bold text-black/60">WalletConnect</span> → scan. The phone&apos;s
-                  default camera often shows &quot;no usable data&quot; because it does not open{' '}
-                  <span className="font-mono">wc:</span> links.
+                  After the QR appears: open <span className="font-bold text-black/60">Phantom</span> (or Solflare /
+                  Backpack) → <span className="font-bold text-black/60">WalletConnect</span> → scan — on{' '}
+                  <span className="font-bold text-black/60">devnet</span>. Use the wallet&apos;s scanner, not the phone
+                  camera (<span className="font-mono">wc:</span> links). MetaMask often completes on the phone but
+                  never finishes sign-in here; prefer Phantom for Solana.
                 </p>
               </>
             )}

@@ -2,7 +2,11 @@
   "license": "ISC",
   "name": "solAgent",
   "private": true,
-  "workspaces": ["shared", "services/*", "app"],
+  "workspaces": [
+    "shared",
+    "services/*",
+    "app"
+  ],
   "scripts": {
     "db:migrate": "cd shared && npx prisma migrate dev",
     "db:generate": "cd shared && npx prisma generate",
