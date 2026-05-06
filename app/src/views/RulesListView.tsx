@@ -2,7 +2,7 @@ import { motion } from 'motion/react';
 import { Plus, Database } from 'lucide-react';
 import { AutomationRule } from '../types';
 import { RuleCard } from '../components/rules/RuleCard';
-import { EmptyState } from '../components/ui';
+import { EmptyState, Skeleton } from '../components/ui';
 
 interface RulesListViewProps {
   key?: string;
@@ -20,7 +20,7 @@ export const RulesListView = ({ rules, isLoading, onAddRule, onDeleteRule }: Rul
          <p className="text-black/40 text-xl font-medium mt-2">Manage the automatic tasks that happen when you're away.</p>
       </div>
       <div className="flex items-center gap-4">
-        <button 
+        <button
           onClick={onAddRule}
           className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-brand-ink text-white font-bold text-sm tracking-widest shadow-xl shadow-black/10 hover:scale-105 transition-all"
         >
@@ -29,10 +29,14 @@ export const RulesListView = ({ rules, isLoading, onAddRule, onDeleteRule }: Rul
       </div>
     </div>
 
-    {rules.length === 0 ? (
-      <EmptyState 
-        icon={Database} 
-        title="No Active Rules" 
+    {isLoading ? (
+      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-8">
+        {[1, 2, 3].map((i) => <Skeleton key={i} className="h-72 rounded-[44px]" />)}
+      </div>
+    ) : rules.length === 0 ? (
+      <EmptyState
+        icon={Database}
+        title="No Active Rules"
         description="Your agent is currently purely reactive. Create a rule to start autonomous optimization."
         actionText="Create First Rule"
         onAction={onAddRule}

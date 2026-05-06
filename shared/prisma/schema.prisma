@@ -43,23 +43,26 @@ model User {
   dailyLimitUsd  Decimal       @default(1000) @map("daily_limit_usd") @db.Decimal(18, 6)
   isActive       Boolean       @default(true) @map("is_active")
   /// IANA timezone from browser — used for time_cron "until PM" local interpretation
-  timezone       String        @default("UTC")
-  agentWallets   AgentWallet[]
-  rules          Rule[]
+  timezone          String        @default("UTC")
+  telegramChatId    String?       @map("telegram_chat_id")
+  notifyOnExec      Boolean       @default(false) @map("notify_on_exec")
+  notifyOnFail      Boolean       @default(true)  @map("notify_on_fail")
+  agentWallets      AgentWallet[]
+  rules             Rule[]
 
   @@map("users")
 }
 
 model AgentWallet {
-  id           String   @id @default(uuid())
-  userId       String   @map("user_id")
-  pubkey       String   @unique
-  encryptedKey Bytes    @map("encrypted_key")
-  keyIv        Bytes    @map("key_iv")
-  createdAt    DateTime @default(now()) @map("created_at")
-  isActive     Boolean  @default(true) @map("is_active")
-  user         User     @relation(fields: [userId], references: [id])
-  rules        Rule[]
+  id             String   @id @default(uuid())
+  userId         String   @map("user_id")
+  ownerPubkey    String   @map("owner_pubkey")
+  delegatePubkey String   @map("delegate_pubkey")
+  mandatePda     String?  @unique @map("mandate_pda")
+  createdAt      DateTime @default(now()) @map("created_at")
+  isActive       Boolean  @default(true) @map("is_active")
+  user           User     @relation(fields: [userId], references: [id])
+  rules          Rule[]
 
   @@map("agent_wallets")
 }
@@ -105,6 +108,18 @@ model ExecutionLog {
   rule            Rule       @relation(fields: [ruleId], references: [id])
 
   @@map("execution_log")
+}
+
+model PublishedTemplate {
+  id          String   @id @default(uuid())
+  ruleHash    String   @unique @map("rule_hash")
+  description String
+  parsedRule  Json     @map("parsed_rule")
+  useCount    Int      @default(0) @map("use_count")
+  upvotes     Int      @default(0)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("published_templates")
 }
 
 model AuditEvent {

@@ -1,0 +1,63 @@
+# Dependencies — never needed
+node_modules/
+**/node_modules/
+
+# Build output — read source, not compiled output
+dist/
+**/dist/
+build/
+
+# Lock files — never useful for code review
+package-lock.json
+**/package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Prisma generated client — generated code, not source
+**/generated/
+shared/node_modules/
+
+# Test coverage output
+coverage/
+**/coverage/
+lcov.info
+*.lcov
+
+# Solana/Anchor build artifacts
+target/
+**/*.so
+**/*.keypair.json
+programs/sol-agent/target/
+
+# Docker
+.docker/
+docker/qvac/node_modules/
+
+# Logs
+*.log
+**/*.log
+logs/
+
+# OS
+.DS_Store
+.env.devnet
+.env.mainnet
+.env.localnet
+app/.env.*
+
+# Git
+.git/
+
+# TypeScript declaration maps — not useful for review
+**/*.d.ts
+**/*.d.ts.map
+**/*.js.map
+
+# Vite cache
+app/.vite/
+app/dist/
+**/.vite/
+
+# Editor
+.vscode/
+.idea/

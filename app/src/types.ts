@@ -3,7 +3,7 @@ export enum AgentStatus {
   PAUSED = 'paused'
 }
 
-export type AppView = 'dashboard' | 'create-rule' | 'rules-list' | 'audit-log';
+export type AppView = 'dashboard' | 'create-rule' | 'rules-list' | 'audit-log' | 'performance' | 'marketplace' | 'mandate';
 
 export interface AutomationRule {
   id: string;

@@ -9,7 +9,7 @@
  * Returns ~672 data points (7d × 24h × 4 bars/h).
  */
 import { z } from 'zod';
-import type { SolAgentRule } from '@solagent/shared';
+import type { ArchonRule } from '@archon/shared';
 
 // ─── Pyth Benchmarks response schema ─────────────────────────────────────────
 
@@ -30,21 +30,14 @@ export interface FiringEvent {
 }
 
 export interface SimulationResult {
-  parsedRule: SolAgentRule;
+  parsedRule: ArchonRule;
   totalFires: number;
   firingEvents: FiringEvent[];
   estimatedDailyFires: number;
+  note?: string;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-const PYTH_SYMBOL_MAP: Record<string, string> = {
-  SOL:  'Crypto.SOL/USD',
-  USDC: 'Crypto.USDC/USD',
-  USDT: 'Crypto.USDT/USD',
-  JUP:  'Crypto.JUP/USD',
-  BONK: 'Crypto.BONK/USD',
-};
 
 /** Max candles to return in firingEvents array to avoid huge payloads. */
 const MAX_FIRING_EVENTS_RETURNED = 100;
@@ -52,9 +45,14 @@ const MAX_FIRING_EVENTS_RETURNED = 100;
 /** 7-day lookback window. */
 const LOOKBACK_SECONDS = 7 * 24 * 60 * 60;
 
-async function fetchPythHistory(asset: string): Promise<PythBenchmarksResponse> {
-  const symbol = PYTH_SYMBOL_MAP[asset.toUpperCase()];
-  if (!symbol) throw new Error(`No Pyth symbol for asset: ${asset}`);
+function toPythSymbol(asset: string): string {
+  // Raw mint addresses won't have Pyth data under their address — construct anyway,
+  // fetchPythHistory returns null on no_data which the caller handles gracefully.
+  return `Crypto.${asset.toUpperCase()}/USD`;
+}
+
+async function fetchPythHistory(asset: string): Promise<PythBenchmarksResponse | null> {
+  const symbol = toPythSymbol(asset);
 
   const to   = Math.floor(Date.now() / 1000);
   const from = to - LOOKBACK_SECONDS;
@@ -66,18 +64,11 @@ async function fetchPythHistory(asset: string): Promise<PythBenchmarksResponse> 
   url.searchParams.set('to', String(to));
 
   const res = await fetch(url.toString(), { signal: AbortSignal.timeout(20_000) });
-  if (!res.ok) {
-    throw new Error(`Pyth Benchmarks HTTP ${res.status} for ${asset}`);
-  }
+  if (!res.ok) return null;
 
   const body: unknown = await res.json();
   const parsed = PythBenchmarksResponseSchema.safeParse(body);
-  if (!parsed.success) {
-    throw new Error(`Pyth Benchmarks unexpected shape: ${parsed.error.message}`);
-  }
-  if (parsed.data.s !== 'ok') {
-    throw new Error(`Pyth Benchmarks returned status "${parsed.data.s}" for ${asset}`);
-  }
+  if (!parsed.success || parsed.data.s !== 'ok') return null;
   return parsed.data;
 }
 
@@ -96,7 +87,7 @@ function triggerFires(triggerType: string, price: number, threshold: number): bo
 /**
  * Builds the human-readable hypothetical action string.
  */
-function describeAction(rule: SolAgentRule, price: number): string {
+function describeAction(rule: ArchonRule, price: number): string {
   const { action } = rule;
   switch (action.type) {
     case 'swap':
@@ -121,21 +112,26 @@ function describeAction(rule: SolAgentRule, price: number): string {
  * Non-price triggers (balance_below, time_cron, outflow_exceeded) are not
  * simulatable against price history — returns totalFires: 0 with a note.
  */
-export async function simulateRule(rule: SolAgentRule): Promise<SimulationResult> {
+export async function simulateRule(rule: ArchonRule): Promise<SimulationResult> {
   const { trigger } = rule;
   const isPriceTrigger =
     trigger.type === 'price_below' || trigger.type === 'price_above';
 
   if (!isPriceTrigger) {
+    return { parsedRule: rule, totalFires: 0, firingEvents: [], estimatedDailyFires: 0 };
+  }
+
+  const history = await fetchPythHistory(trigger.asset);
+  if (!history) {
     return {
       parsedRule: rule,
       totalFires: 0,
       firingEvents: [],
       estimatedDailyFires: 0,
+      note: `No price history available for ${trigger.asset} on Pyth Benchmarks.`,
     };
   }
 
-  const history = await fetchPythHistory(trigger.asset);
   const { t: timestamps, c: closes } = history;
 
   const firingEvents: FiringEvent[] = [];

@@ -1,6 +1,6 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import IORedis from 'ioredis';
-import { REDIS_CHANNEL } from '@solagent/shared';
+import { REDIS_CHANNEL } from '@archon/shared';
 import { createSubscriber } from '../lib/redis.js';
 import { type JwtPayload } from '../types.js';
 

@@ -1,5 +1,5 @@
 {
-  "name": "@solagent/condition-evaluator",
+  "name": "@archon/condition-evaluator",
   "version": "1.0.0",
   "private": true,
   "scripts": {
@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
-    "@solagent/shared": "*",
+    "@archon/shared": "*",
     "bullmq": "^5.25.0",
     "fastify": "^5.2.0",
     "ioredis": "^5.4.1",

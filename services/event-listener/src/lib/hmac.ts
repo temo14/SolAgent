@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from 'crypto';
-import { ERROR_CODES } from '@solagent/shared';
+import { ERROR_CODES } from '@archon/shared';
 
 /**
  * Validates the HMAC-SHA256 signature on an incoming Helius webhook.

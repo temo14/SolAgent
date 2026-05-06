@@ -25,7 +25,7 @@ COPY docker/qvac/package.json ./
 RUN npm install --omit=dev --legacy-peer-deps
 
 # Config declares which model aliases the HTTP server can load.
-# Alias "solagent-parser" must match QVAC_MODEL in .env.devnet
+# Alias "archon-parser" must match QVAC_MODEL in .env.devnet
 COPY docker/qvac/qvac.config.json ./
 
 EXPOSE 11434

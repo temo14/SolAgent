@@ -3,8 +3,8 @@ import {
   REDIS_CHANNEL,
   HeliusWebhookEventSchema,
   type ExecJobPayload,
-  type SolAgentRule,
-} from '@solagent/shared';
+  type ArchonRule,
+} from '@archon/shared';
 import { getPrisma } from '../lib/prisma.js';
 import { getSubscriber } from '../lib/redis.js';
 import { getExecQueue } from '../lib/queue.js';
@@ -13,7 +13,7 @@ import { evaluateTrigger, computeIdempotencyKey } from '../lib/evaluate.js';
 /**
  * Processes a single webhook event:
  * 1. Parse + validate with Zod
- * 2. Find all agent wallets referenced in the event
+ * 2. Find all agent wallets whose derived agent keypair (delegatePubkey) is in the affected accounts
  * 3. For each active rule on those wallets, evaluate trigger condition
  * 4. On match: compute idempotency key → dispatch to BullMQ exec queue
  */
@@ -36,7 +36,6 @@ async function processWebhookEvent(
   }
   const event = result.data;
 
-  // Extract all account pubkeys mentioned in the event
   const affectedPubkeys = event.accountData.map((ad) => ad.account);
   if (affectedPubkeys.length === 0) {
     log.debug({ signature: event.signature }, 'Webhook event has no accountData — skipping');
@@ -45,9 +44,9 @@ async function processWebhookEvent(
 
   const prisma = getPrisma();
 
-  // Find agent wallets that match any of the affected accounts
+  // Match agent wallets whose derived agent keypair (delegatePubkey) was involved in the tx.
   const agentWallets = await prisma.agentWallet.findMany({
-    where: { pubkey: { in: affectedPubkeys }, isActive: true },
+    where: { delegatePubkey: { in: affectedPubkeys }, isActive: true },
     include: {
       rules: {
         where: { status: 'ACTIVE' },
@@ -60,7 +59,6 @@ async function processWebhookEvent(
 
   for (const wallet of agentWallets) {
     for (const rule of wallet.rules) {
-      // Enforce per-rule daily fire limit (DB-level circuit breaker)
       if (rule.firesToday >= rule.maxFiresDay) {
         log.warn(
           { ruleId: rule.id, firesToday: rule.firesToday, maxFiresDay: rule.maxFiresDay },
@@ -69,18 +67,19 @@ async function processWebhookEvent(
         continue;
       }
 
-      const parsedRule = rule.parsedRule as unknown as SolAgentRule;
+      const parsedRule = rule.parsedRule as unknown as ArchonRule;
 
       let triggerResult;
       try {
+        // Use ownerPubkey (user's wallet) for balance-based trigger evaluation.
         triggerResult = await evaluateTrigger(
           { id: rule.id, parsedRule },
-          wallet.pubkey,
+          wallet.ownerPubkey,
           event,
         );
       } catch (err) {
         log.error(
-          { ruleId: rule.id, agentPubkey: wallet.pubkey, err },
+          { ruleId: rule.id, ownerPubkey: wallet.ownerPubkey, err },
           'Trigger evaluation failed',
         );
         continue;
@@ -103,15 +102,14 @@ async function processWebhookEvent(
         triggerSlot: triggerResult.triggerSlot,
         observedValue: triggerResult.observedValue,
         parsedRule,
+        isRetry: false,
       };
 
-      const queue = getExecQueue(wallet.pubkey);
+      const queue = getExecQueue(wallet.id);
       try {
         await queue.add('execute', payload, {
-          // BullMQ-level deduplication: jobs with the same jobId
-          // are not enqueued if one is already waiting or active
           jobId: idempotencyKey,
-          attempts: 1, // spec §NO_AUTO_RETRY: no automatic retries
+          attempts: 1,
           backoff: undefined,
         });
 
@@ -119,7 +117,7 @@ async function processWebhookEvent(
           {
             ruleId: rule.id,
             idempotencyKey,
-            agentWalletPubkey: wallet.pubkey,
+            agentWalletId: wallet.id,
             observedValue: triggerResult.observedValue,
           },
           'Execution job dispatched to BullMQ',
@@ -134,14 +132,6 @@ async function processWebhookEvent(
   }
 }
 
-/**
- * Starts the main condition evaluation worker.
- *
- * We register message/reconnect handlers synchronously, then kick off
- * the Redis SUBSCRIBE in the background (fire-and-forget). IORedis will
- * retry the command indefinitely (maxRetriesPerRequest: null) until Redis
- * is available, so the service starts cleanly even if Redis is briefly down.
- */
 export function startConditionWorker(log: FastifyBaseLogger): void {
   const subscriber = getSubscriber();
 
@@ -159,7 +149,6 @@ export function startConditionWorker(log: FastifyBaseLogger): void {
     log.info({ channel: REDIS_CHANNEL.WEBHOOK_EVENTS }, 'Redis subscriber ready');
   });
 
-  // Non-blocking: queued by IORedis until connection is established
   subscriber.subscribe(REDIS_CHANNEL.WEBHOOK_EVENTS).catch((err: unknown) => {
     log.error({ err }, 'Failed to subscribe to webhook events channel');
   });

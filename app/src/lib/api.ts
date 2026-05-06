@@ -41,6 +41,7 @@ async function request<T>(
 export const api = {
   get: <T>(path: string, jwt?: string) => request<T>('GET', path, { jwt }),
   post: <T>(path: string, body: unknown, jwt?: string) => request<T>('POST', path, { body, jwt }),
+  put: <T>(path: string, body: unknown, jwt?: string) => request<T>('PUT', path, { body, jwt }),
   patch: <T>(path: string, body: unknown, jwt?: string) => request<T>('PATCH', path, { body, jwt }),
   del: <T>(path: string, jwt?: string) => request<T>('DELETE', path, { jwt }),
 };

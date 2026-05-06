@@ -10,6 +10,9 @@ interface BackendTrigger {
   asset: string;
   threshold: number;
   cron_expression?: string;
+  until_local_hour?: number;
+  until_utc_hour?: number;
+  schedule_timezone?: string;
 }
 
 interface BackendAction {
@@ -18,6 +21,7 @@ interface BackendAction {
   to_asset?: string;
   amount: number;
   recipient?: string;
+  max_slippage_bps?: number;
 }
 
 export interface BackendRule {
@@ -108,11 +112,40 @@ export function useRules() {
   }, [fetchRules]);
 
   /**
-   * Sends the NL input to rule-engine (which calls QVAC).
-   * Returns the raw backend rule (still PENDING_ACTIVATION).
+   * Parse-only: sends the NL input to QVAC and returns the structured preview.
+   * Does NOT save anything to the database.
+   */
+  const parseRule = useCallback(
+    async (rawInput: string): Promise<BackendRule['parsedRule'] | null> => {
+      if (!jwt) return null;
+      try {
+        const res = await api.post<{ ok: boolean; data: { parsedRule: BackendRule['parsedRule'] } }>(
+          '/api/rules/parse',
+          { rawInput },
+          jwt,
+        );
+        return res.ok ? res.data.parsedRule : null;
+      } catch (err) {
+        if (err instanceof ApiError) {
+          const body = err.body as { message?: string; errorCode?: string } | null;
+          throw new Error(body?.message ?? `Rule service unavailable (${String(err.status)}).`);
+        }
+        throw new Error(err instanceof Error ? err.message : 'Could not reach rule service.');
+      }
+    },
+    [jwt],
+  );
+
+  /**
+   * Creates a rule (PENDING_ACTIVATION) then immediately activates it.
+   * Call this only after the user has confirmed the parsed preview.
    */
   const createRule = useCallback(
-    async (rawInput: string, agentWalletId: string): Promise<BackendRule | null> => {
+    async (
+      rawInput: string,
+      agentWalletId: string,
+      opts?: { maxAmountUsd?: number; maxFiresPerDay?: number },
+    ): Promise<BackendRule | null> => {
       if (!jwt) return null;
       const clientTimezone =
         typeof Intl !== 'undefined'
@@ -125,6 +158,8 @@ export function useRules() {
             rawInput,
             agentWalletId,
             ...(clientTimezone !== undefined ? { clientTimezone } : {}),
+            ...(opts?.maxAmountUsd !== undefined ? { maxAmountUsd: opts.maxAmountUsd } : {}),
+            ...(opts?.maxFiresPerDay !== undefined ? { maxFiresPerDay: opts.maxFiresPerDay } : {}),
           },
           jwt,
         );
@@ -132,9 +167,7 @@ export function useRules() {
       } catch (err) {
         if (err instanceof ApiError) {
           const body = err.body as { message?: string; errorCode?: string } | null;
-          throw new Error(
-            body?.message ?? `Rule service unavailable (${String(err.status)}).`,
-          );
+          throw new Error(body?.message ?? `Rule service unavailable (${String(err.status)}).`);
         }
         throw new Error(err instanceof Error ? err.message : 'Could not reach rule service.');
       }
@@ -164,12 +197,8 @@ export function useRules() {
   const deleteRule = useCallback(
     async (ruleId: string): Promise<void> => {
       if (!jwt) return;
-      try {
-        await api.del(`/api/rules/${ruleId}`, jwt);
-        setRules((prev) => prev.filter((r) => r.id !== ruleId));
-      } catch (err) {
-        console.error('Failed to delete rule:', err);
-      }
+      await api.del(`/api/rules/${ruleId}`, jwt);
+      setRules((prev) => prev.filter((r) => r.id !== ruleId));
     },
     [jwt],
   );
@@ -203,6 +232,7 @@ export function useRules() {
     isLoading,
     error,
     fetchRules,
+    parseRule,
     createRule,
     activateRule,
     deleteRule,

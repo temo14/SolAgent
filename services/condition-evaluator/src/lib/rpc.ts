@@ -60,3 +60,31 @@ export async function getSolBalanceLamports(pubkey: string): Promise<number> {
 export async function getCurrentSlot(): Promise<number> {
   return rpcPost<number>('getSlot', [{ commitment: 'confirmed' }]);
 }
+
+interface TokenAccountsResult {
+  value: Array<{
+    account: {
+      data: {
+        parsed: {
+          info: {
+            tokenAmount: { uiAmount: number | null };
+          };
+        };
+      };
+    };
+  }>;
+}
+
+/**
+ * Returns the UI-amount (decimal-adjusted) SPL token balance for a given owner and mint.
+ * Returns 0 if the owner has no token account for that mint.
+ */
+export async function getSplTokenBalance(owner: string, mint: string): Promise<number> {
+  const result = await rpcPost<TokenAccountsResult>('getTokenAccountsByOwner', [
+    owner,
+    { mint },
+    { encoding: 'jsonParsed', commitment: 'confirmed' },
+  ]);
+  if (!result.value.length) return 0;
+  return result.value[0]?.account.data.parsed.info.tokenAmount.uiAmount ?? 0;
+}

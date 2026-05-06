@@ -1,5 +1,5 @@
 {
-  "name": "@solagent/execution-engine",
+  "name": "@archon/execution-engine",
   "version": "1.0.0",
   "private": true,
   "scripts": {
@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
-    "@solagent/shared": "*",
+    "@archon/shared": "*",
     "@solana/web3.js": "^1.98.0",
     "bs58": "^5.0.0",
     "bullmq": "^5.25.0",

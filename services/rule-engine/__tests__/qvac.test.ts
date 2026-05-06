@@ -1,11 +1,11 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { parseRuleWithQvac, QvacError } from '../src/lib/qvac.js';
-import { ERROR_CODES } from '@solagent/shared';
+import { ERROR_CODES } from '@archon/shared';
 
 // ─── Setup ────────────────────────────────────────────────────────────────────
 
 process.env.QVAC_BASE_URL = 'http://localhost:11434';
-process.env.QVAC_MODEL = 'solagent-parser';
+process.env.QVAC_MODEL = 'archon-parser';
 
 const VALID_RULE_JSON = JSON.stringify({
   trigger: { type: 'balance_below', asset: 'SOL', threshold: 1 },
@@ -26,19 +26,19 @@ function makeQvacResponse(content: string) {
 
 beforeEach(() => {
   process.env.QVAC_BASE_URL = 'http://localhost:11434';
-  process.env.QVAC_MODEL = 'solagent-parser';
+  process.env.QVAC_MODEL = 'archon-parser';
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
   process.env.QVAC_BASE_URL = 'http://localhost:11434';
-  process.env.QVAC_MODEL = 'solagent-parser';
+  process.env.QVAC_MODEL = 'archon-parser';
 });
 
 // ─── parseRuleWithQvac ────────────────────────────────────────────────────────
 
 describe('parseRuleWithQvac', () => {
-  it('fetch returns VALID_RULE_JSON → returns SolAgentRule with correct trigger.type', async () => {
+  it('fetch returns VALID_RULE_JSON → returns ArchonRule with correct trigger.type', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(makeQvacResponse(VALID_RULE_JSON)));
     const result = await parseRuleWithQvac('If my SOL drops below 1, swap 10 USDC to SOL');
     expect(result.trigger.type).toBe('balance_below');

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { PublicKey } from '@solana/web3.js';
 import { buildMemoProof, buildMemoInstruction, MEMO_PROGRAM_V2 } from '../src/lib/memo.js';
-import type { SolAgentRule } from '@solagent/shared';
+import type { ArchonRule } from '@archon/shared';
 
 // No mocks needed — memo.ts is pure (only Node crypto + @solana/web3.js PublicKey)
 
@@ -12,7 +12,7 @@ const VALID_OPTS = {
     trigger: { type: 'balance_below', asset: 'SOL', threshold: 1 },
     action: { type: 'swap', from_asset: 'USDC', to_asset: 'SOL', amount: 10, max_slippage_bps: 50 },
     conditions: { max_amount_usd: 50, max_fires_per_day: 10 },
-  } as SolAgentRule,
+  } as ArchonRule,
   triggerSlot: 285432910,
   observedValue: 0.87,
   priceUsed: 142.50,

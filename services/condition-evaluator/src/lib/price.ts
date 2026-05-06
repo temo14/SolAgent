@@ -1,4 +1,4 @@
-import { TOKEN_MINTS } from '@solagent/shared';
+import { TOKEN_MINTS } from '@archon/shared';
 
 interface JupiterPriceEntry {
   id: string;

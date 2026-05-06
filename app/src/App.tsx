@@ -5,6 +5,7 @@ import {
   LogOut,
   Copy,
   Check,
+  Menu,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { AppView } from './types';
@@ -13,6 +14,9 @@ import { ErrorBanner } from './components/ui';
 import { DashboardView } from './views/DashboardView';
 import { RulesListView } from './views/RulesListView';
 import { AuditLogView } from './views/AuditLogView';
+import { PerformanceView } from './views/PerformanceView';
+import { MarketplaceView } from './views/MarketplaceView';
+import { MandateView } from './views/MandateView';
 import { RuleWizard } from './components/rules/RuleWizard';
 import { ConnectWallet } from './components/auth/ConnectWallet';
 import { useAuth } from './context/AuthContext';
@@ -20,11 +24,12 @@ import { useRules } from './hooks/useRules';
 import { useAudit } from './hooks/useAudit';
 import { useSSE, type ExecResult } from './hooks/useSSE';
 import { useAgentBalance } from './hooks/useAgentBalance';
+import { useNotificationSettings } from './hooks/useNotificationSettings';
 
 // ─── Authenticated shell ───────────────────────────────────────────────────────
 
 function AuthenticatedApp() {
-  const { walletPubkey, jwt, primaryAgentWallet, disconnect } = useAuth();
+  const { walletPubkey, jwt, primaryAgentWallet, disconnect, refreshAgentWallets } = useAuth();
   const {
     rules,
     isLoading: rulesLoading,
@@ -32,20 +37,24 @@ function AuthenticatedApp() {
     deleteRule,
     pauseAllRules,
     resumeAllRules,
+    parseRule,
     createRule,
     activateRule,
   } = useRules();
   // Audit events are indexed by the *user* signing wallet, not the agent keypair.
   const { auditLog, isLoading: auditLoading, prependLiveEntry } = useAudit(walletPubkey);
   const { sol: solBalance, isLoading: balanceLoading, refetch: refetchBalance } = useAgentBalance(
-    primaryAgentWallet?.pubkey ?? null,
+    primaryAgentWallet?.delegatePubkey ?? null,
   );
+
+  const { settings: notifSettings, refetch: refetchNotifSettings } = useNotificationSettings(jwt);
 
   const [activeView, setActiveView] = useState<AppView>('dashboard');
   const [agentStatus, setAgentStatus] = useState<AgentStatus>(AgentStatus.ACTIVE);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [footerAgentCopied, setFooterAgentCopied] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   // ── SSE: live execution results ──────────────────────────────────────────
   useSSE(jwt, useCallback((result: ExecResult) => {
@@ -84,7 +93,7 @@ function AuthenticatedApp() {
     ? `${walletPubkey.slice(0, 4)}…${walletPubkey.slice(-4)}`
     : '–';
 
-  const agentPubkeyFull = primaryAgentWallet?.pubkey ?? null;
+  const agentPubkeyFull = primaryAgentWallet?.delegatePubkey ?? null;
 
   const copyFooterAgentAddress = async () => {
     if (!agentPubkeyFull) return;
@@ -111,7 +120,7 @@ function AuthenticatedApp() {
             S
           </div>
           <div className="flex flex-col -space-y-1">
-            <span className="text-2xl font-black tracking-tighter">SolAgent</span>
+            <span className="text-2xl font-black tracking-tighter">Archon</span>
             <span className="text-[10px] font-bold tracking-[0.4em] text-brand-safe leading-none">
               VERIFIABLE AI WALLET
             </span>
@@ -119,14 +128,20 @@ function AuthenticatedApp() {
         </div>
 
         <div className="flex items-center gap-12">
-          <div className="hidden lg:flex items-center gap-12">
-            {(['dashboard', 'rules-list', 'audit-log'] as AppView[]).map((v) => (
+          <div className="hidden lg:flex items-center gap-10">
+            {([
+              ['dashboard', 'Overview'],
+              ['rules-list', 'My Rules'],
+              ['performance', 'Performance'],
+              ['marketplace', 'Marketplace'],
+              ['audit-log', 'History'],
+            ] as [AppView, string][]).map(([v, label]) => (
               <button
                 key={v}
                 onClick={() => setActiveView(v)}
                 className={`text-[11px] font-extrabold uppercase tracking-[0.2em] transition-all relative ${activeView === v ? 'text-brand-ink' : 'text-black/30 hover:text-black'}`}
               >
-                {v === 'rules-list' ? 'My Rules' : v === 'audit-log' ? 'Activity History' : 'Overview'}
+                {label}
                 {activeView === v && (
                   <motion.div
                     layoutId="activeNav"
@@ -136,6 +151,14 @@ function AuthenticatedApp() {
               </button>
             ))}
           </div>
+
+          {/* Mobile hamburger */}
+          <button
+            onClick={() => setMobileNavOpen((o) => !o)}
+            className="lg:hidden p-3 hover:bg-black/5 rounded-2xl transition-colors"
+          >
+            <Menu size={20} className="text-black/40" />
+          </button>
 
           <div className="flex items-center gap-6">
             {/* Wallet address chip */}
@@ -181,6 +204,34 @@ function AuthenticatedApp() {
         </div>
       </nav>
 
+      {/* Mobile nav drawer */}
+      <AnimatePresence>
+        {mobileNavOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            className="lg:hidden bg-white border-b border-black/5 px-8 py-4 flex flex-col gap-1 z-40"
+          >
+            {([
+              ['dashboard', 'Overview'],
+              ['rules-list', 'My Rules'],
+              ['performance', 'Performance'],
+              ['marketplace', 'Marketplace'],
+              ['audit-log', 'History'],
+            ] as [AppView, string][]).map(([v, label]) => (
+              <button
+                key={v}
+                onClick={() => { setActiveView(v); setMobileNavOpen(false); }}
+                className={`w-full text-left px-4 py-3 rounded-2xl text-sm font-bold transition-colors ${activeView === v ? 'bg-brand-ink text-white' : 'text-black/50 hover:bg-black/5'}`}
+              >
+                {label}
+              </button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-8 py-8">
         {error && <ErrorBanner message={error} onRetry={handleRefresh} />}
@@ -199,6 +250,16 @@ function AuthenticatedApp() {
               onRefresh={handleRefresh}
               onNavigateToRules={() => setActiveView('rules-list')}
               onNavigateToAudit={() => setActiveView('audit-log')}
+              agentWalletId={primaryAgentWallet?.id ?? ''}
+              agentPubkey={primaryAgentWallet?.ownerPubkey ?? ''}
+              mandatePda={primaryAgentWallet?.mandatePda ?? null}
+              onMandateCreated={(_pda: string) => void refreshAgentWallets()}
+              onNavigateToMandate={() => setActiveView('mandate')}
+              jwt={jwt ?? ''}
+              telegramChatId={notifSettings?.telegramChatId ?? null}
+              notifyOnExec={notifSettings?.notifyOnExec ?? false}
+              notifyOnFail={notifSettings?.notifyOnFail ?? true}
+              onTelegramLinked={() => void refetchNotifSettings()}
             />
           )}
           {activeView === 'rules-list' && (
@@ -207,11 +268,44 @@ function AuthenticatedApp() {
               rules={rules}
               isLoading={rulesLoading}
               onAddRule={() => setActiveView('create-rule')}
-              onDeleteRule={(id) => void deleteRule(id)}
+              onDeleteRule={async (id) => {
+                try {
+                  await deleteRule(id);
+                } catch (err) {
+                  setError(err instanceof Error ? err.message : 'Failed to delete rule');
+                }
+              }}
             />
           )}
           {activeView === 'audit-log' && (
             <AuditLogView key="a" auditLog={auditLog} isLoading={auditLoading} />
+          )}
+          {activeView === 'performance' && (
+            <PerformanceView
+              key="p"
+              jwt={jwt ?? ''}
+              agentWalletId={primaryAgentWallet?.id ?? ''}
+              onNavigateToMandate={() => setActiveView('mandate')}
+            />
+          )}
+          {activeView === 'marketplace' && (
+            <MarketplaceView
+              key="m"
+              jwt={jwt}
+              onUseTemplate={(description) => {
+                setActiveView('create-rule');
+                // Store template description for the wizard to pick up via URL param / state
+                window.sessionStorage.setItem('archon:template', description);
+              }}
+            />
+          )}
+          {activeView === 'mandate' && (
+            <MandateView
+              key="mv"
+              jwt={jwt ?? ''}
+              agentWalletId={primaryAgentWallet?.id ?? ''}
+              onBack={() => setActiveView('dashboard')}
+            />
           )}
           {activeView === 'create-rule' && (
             <RuleWizard
@@ -221,6 +315,7 @@ function AuthenticatedApp() {
                 void fetchRules();
                 setActiveView('rules-list');
               }}
+              parseRule={parseRule}
               createRule={createRule}
               activateRule={activateRule}
               agentWalletId={primaryAgentWallet?.id ?? ''}

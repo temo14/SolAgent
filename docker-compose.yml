@@ -5,15 +5,15 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: solAgent
+      POSTGRES_USER: archon
       POSTGRES_PASSWORD: devpassword
-      POSTGRES_DB: solAgent_devnet
+      POSTGRES_DB: archon_devnet
     ports:
       - '5432:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U solAgent -d solAgent_devnet']
+      test: ['CMD-SHELL', 'pg_isready -U archon -d archon_devnet']
       interval: 5s
       timeout: 5s
       retries: 10
@@ -59,7 +59,7 @@ services:
     env_file:
       - .env.devnet
     environment:
-      DATABASE_URL: postgresql://solAgent:devpassword@postgres:5432/solAgent_devnet
+      DATABASE_URL: postgresql://archon:devpassword@postgres:5432/archon_devnet
     depends_on:
       postgres:
         condition: service_healthy
@@ -77,7 +77,7 @@ services:
     environment:
       PORT: '4000'
       NODE_ENV: production
-      DATABASE_URL: postgresql://solAgent:devpassword@postgres:5432/solAgent_devnet
+      DATABASE_URL: postgresql://archon:devpassword@postgres:5432/archon_devnet
       REDIS_URL: redis://redis:6379
     env_file:
       - .env.devnet
@@ -111,7 +111,7 @@ services:
     environment:
       PORT: '4001'
       NODE_ENV: production
-      DATABASE_URL: postgresql://solAgent:devpassword@postgres:5432/solAgent_devnet
+      DATABASE_URL: postgresql://archon:devpassword@postgres:5432/archon_devnet
       REDIS_URL: redis://redis:6379
       QVAC_BASE_URL: http://qvac:11434
     env_file:
@@ -178,7 +178,7 @@ services:
     environment:
       PORT: '4003'
       NODE_ENV: production
-      DATABASE_URL: postgresql://solAgent:devpassword@postgres:5432/solAgent_devnet
+      DATABASE_URL: postgresql://archon:devpassword@postgres:5432/archon_devnet
       REDIS_URL: redis://redis:6379
     env_file:
       - .env.devnet
@@ -212,7 +212,7 @@ services:
     environment:
       PORT: '4004'
       NODE_ENV: production
-      DATABASE_URL: postgresql://solAgent:devpassword@postgres:5432/solAgent_devnet
+      DATABASE_URL: postgresql://archon:devpassword@postgres:5432/archon_devnet
       REDIS_URL: redis://redis:6379
     env_file:
       - .env.devnet
@@ -246,7 +246,7 @@ services:
     environment:
       PORT: '4005'
       NODE_ENV: production
-      DATABASE_URL: postgresql://solAgent:devpassword@postgres:5432/solAgent_devnet
+      DATABASE_URL: postgresql://archon:devpassword@postgres:5432/archon_devnet
       REDIS_URL: redis://redis:6379
     env_file:
       - .env.devnet
@@ -269,6 +269,25 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
+
+  notification-service:
+    build:
+      context: .
+      dockerfile: services/notification-service/Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://archon:devpassword@postgres:5432/archon_devnet
+      REDIS_URL: redis://redis:6379
+    env_file:
+      - .env.devnet
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
 volumes:
   postgres_data:

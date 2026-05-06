@@ -15,9 +15,12 @@ import { buildSiwsMessage, uint8ToBase64 } from '../lib/siws';
 
 export interface AgentWalletInfo {
   id: string;
-  pubkey: string;
-  label: string | null;
+  /** User's own wallet (Phantom). Used for mandate PDA derivation. */
+  ownerPubkey: string;
+  /** Archon agent wallet. Fund this address with SOL/tokens. */
+  delegatePubkey: string;
   isActive: boolean;
+  mandatePda?: string | null;
 }
 
 export interface AuthState {
@@ -30,10 +33,7 @@ export interface AuthState {
   /** True while the SIWS + JWT exchange is in progress. */
   isSigning: boolean;
   error: string | null;
-  /**
-   * Run the SIWS flow against the currently connected wallet.
-   * Call this after the wallet-adapter `connect()` resolves and `publicKey` is set.
-   */
+  refreshAgentWallets: () => Promise<void>;
   signIn: () => Promise<void>;
   disconnect: () => void;
   clearError: () => void;
@@ -51,7 +51,6 @@ const AuthContext = createContext<AuthState | null>(null);
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  // Must be rendered inside WalletProvider.
   const { publicKey, signMessage, disconnect: walletDisconnect } = useWallet();
 
   const [walletPubkey, setWalletPubkey] = useState<string | null>(null);
@@ -188,6 +187,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const clearError = useCallback(() => setError(null), []);
 
+  const refreshAgentWallets = useCallback(async () => {
+    if (!jwt) return;
+    const wallets = await loadOrCreateAgentWallet(jwt);
+    setAgentWallets(wallets);
+  }, [jwt]);
+
   const primaryAgentWallet = agentWallets.find((w) => w.isActive) ?? agentWallets[0] ?? null;
 
   return (
@@ -202,6 +207,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signIn,
         disconnect,
         clearError,
+        refreshAgentWallets,
       }}
     >
       {children}
@@ -227,15 +233,17 @@ function normalizeAgentWallets(data: unknown): AgentWalletInfo[] {
   return raw.map((item) => {
     const w = item as {
       id: string;
-      pubkey: string;
+      ownerPubkey: string;
+      delegatePubkey: string;
       isActive?: boolean;
-      label?: string | null;
+      mandatePda?: string | null;
     };
     return {
       id: w.id,
-      pubkey: w.pubkey,
-      label: w.label ?? null,
+      ownerPubkey: w.ownerPubkey ?? '',
+      delegatePubkey: w.delegatePubkey ?? '',
       isActive: w.isActive ?? true,
+      mandatePda: w.mandatePda ?? null,
     };
   });
 }
@@ -252,7 +260,7 @@ async function loadOrCreateAgentWallet(jwt: string): Promise<AgentWalletInfo[]> 
     try {
       const createRes = await api.post<{ ok: boolean; data: AgentWalletInfo }>(
         '/api/agent-wallets',
-        { label: 'Primary Agent' },
+        {},
         jwt,
       );
       if (createRes.ok) {
@@ -260,9 +268,10 @@ async function loadOrCreateAgentWallet(jwt: string): Promise<AgentWalletInfo[]> 
         return [
           {
             id: d.id,
-            pubkey: d.pubkey,
-            label: d.label ?? null,
+            ownerPubkey: d.ownerPubkey ?? '',
+            delegatePubkey: d.delegatePubkey ?? '',
             isActive: d.isActive,
+            mandatePda: d.mandatePda ?? null,
           },
         ];
       }

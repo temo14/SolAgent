@@ -1,12 +1,21 @@
 import { createHash } from 'crypto';
-import type { SolAgentRule, HeliusWebhookEvent } from '@solagent/shared';
 import {
+  type ArchonRule,
+  type HeliusWebhookEvent,
+  TOKEN_MINTS,
   getHourInTimeZone,
   isValidIanaTimeZone,
-} from '@solagent/shared';
-import { getSolBalanceLamports, getCurrentSlot, LAMPORTS_PER_SOL } from './rpc.js';
+} from '@archon/shared';
+import { getSolBalanceLamports, getCurrentSlot, getSplTokenBalance, LAMPORTS_PER_SOL } from './rpc.js';
 import { getAssetPriceUsd } from './price.js';
 import { getPrisma } from './prisma.js';
+
+const BASE58_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+
+function resolveMintAddress(asset: string): string | null {
+  if (BASE58_RE.test(asset)) return asset;
+  return TOKEN_MINTS[asset.toUpperCase()] ?? null;
+}
 
 // ─── Idempotency ──────────────────────────────────────────────────────────────
 
@@ -55,7 +64,7 @@ const NOT_MATCHED = (sig: string, slot: number): TriggerMatch => ({
  * @returns TriggerMatch with matched flag and the observed value
  */
 export async function evaluateTrigger(
-  rule: { id: string; parsedRule: SolAgentRule },
+  rule: { id: string; parsedRule: ArchonRule },
   agentPubkey: string,
   event: HeliusWebhookEvent | null,
 ): Promise<TriggerMatch> {
@@ -73,15 +82,22 @@ export async function evaluateTrigger(
   switch (trigger.type) {
     case 'balance_below':
     case 'balance_above': {
-      if (trigger.asset !== 'SOL') {
-        // Token balance evaluation: TODO in Task 5 (requires getParsedTokenAccountsByOwner)
-        return NOT_MATCHED(eventSig, eventSlot);
+      if (trigger.asset === 'SOL') {
+        const lamports = await getSolBalanceLamports(agentPubkey);
+        const sol = lamports / LAMPORTS_PER_SOL;
+        const matched =
+          trigger.type === 'balance_below' ? sol < trigger.threshold : sol > trigger.threshold;
+        return { matched, observedValue: sol, triggerEventSig: eventSig, triggerSlot: eventSlot };
       }
-      const lamports = await getSolBalanceLamports(agentPubkey);
-      const sol = lamports / LAMPORTS_PER_SOL;
+      // SPL token balance
+      const mint = resolveMintAddress(trigger.asset);
+      if (!mint) return NOT_MATCHED(eventSig, eventSlot);
+      const balance = await getSplTokenBalance(agentPubkey, mint);
       const matched =
-        trigger.type === 'balance_below' ? sol < trigger.threshold : sol > trigger.threshold;
-      return { matched, observedValue: sol, triggerEventSig: eventSig, triggerSlot: eventSlot };
+        trigger.type === 'balance_below'
+          ? balance < trigger.threshold
+          : balance > trigger.threshold;
+      return { matched, observedValue: balance, triggerEventSig: eventSig, triggerSlot: eventSlot };
     }
 
     case 'price_below':

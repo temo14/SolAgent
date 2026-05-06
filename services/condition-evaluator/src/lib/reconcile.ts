@@ -1,16 +1,16 @@
 import type { FastifyBaseLogger } from 'fastify';
-import type { ExecJobPayload, SolAgentRule } from '@solagent/shared';
+import type { ExecJobPayload, ArchonRule } from '@archon/shared';
 import {
   CRON_RECONCILIATION_INTERVAL_MS,
   RECONCILIATION_INTERVAL_MS,
-} from '@solagent/shared';
+} from '@archon/shared';
 import { getPrisma } from './prisma.js';
 import { getExecQueue } from './queue.js';
 import { evaluateTrigger, computeIdempotencyKey } from './evaluate.js';
 
 type ReconcileMode = 'standard' | 'cron';
 
-function includeRuleForMode(parsedRule: SolAgentRule, mode: ReconcileMode): boolean {
+function includeRuleForMode(parsedRule: ArchonRule, mode: ReconcileMode): boolean {
   const isCron = parsedRule.trigger.type === 'time_cron';
   return mode === 'cron' ? isCron : !isCron;
 }
@@ -30,13 +30,13 @@ async function runReconciliation(log: FastifyBaseLogger, mode: ReconcileMode): P
   const rules = await prisma.rule.findMany({
     where: { status: 'ACTIVE' },
     include: {
-      agentWallet: { select: { pubkey: true, id: true } },
+      agentWallet: { select: { ownerPubkey: true, id: true } },
       user: { select: { walletPubkey: true } },
     },
   });
 
   const filtered = rules.filter((rule) =>
-    includeRuleForMode(rule.parsedRule as unknown as SolAgentRule, mode),
+    includeRuleForMode(rule.parsedRule as unknown as ArchonRule, mode),
   );
 
   log.info(
@@ -48,20 +48,19 @@ async function runReconciliation(log: FastifyBaseLogger, mode: ReconcileMode): P
   let skipped = 0;
 
   for (const rule of filtered) {
-    // Daily fire limit check
     if (rule.firesToday >= rule.maxFiresDay) {
       skipped++;
       continue;
     }
 
-    const parsedRule = rule.parsedRule as unknown as SolAgentRule;
+    const parsedRule = rule.parsedRule as unknown as ArchonRule;
 
     let triggerResult;
     try {
-      // Passing null for event — this is the polling (non-webhook) path
+      // Use ownerPubkey (user's wallet) for balance-based trigger evaluation.
       triggerResult = await evaluateTrigger(
         { id: rule.id, parsedRule },
-        rule.agentWallet.pubkey,
+        rule.agentWallet.ownerPubkey,
         null,
       );
     } catch (err) {
@@ -87,9 +86,10 @@ async function runReconciliation(log: FastifyBaseLogger, mode: ReconcileMode): P
       triggerSlot: triggerResult.triggerSlot,
       observedValue: triggerResult.observedValue,
       parsedRule,
+      isRetry: false,
     };
 
-    const queue = getExecQueue(rule.agentWallet.pubkey);
+    const queue = getExecQueue(rule.agentWallet.id);
     try {
       await queue.add('execute', payload, {
         jobId: idempotencyKey,

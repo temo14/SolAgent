@@ -1,5 +1,5 @@
 {
-  "name": "@solagent/rule-engine",
+  "name": "@archon/rule-engine",
   "version": "1.0.0",
   "private": true,
   "scripts": {
@@ -13,7 +13,7 @@
   "dependencies": {
     "@fastify/jwt": "^9.0.0",
     "@prisma/client": "^5.22.0",
-    "@solagent/shared": "*",
+    "@archon/shared": "*",
     "fastify": "^5.2.0",
     "ioredis": "^5.4.1",
     "pino": "^9.6.0",

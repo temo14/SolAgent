@@ -1,6 +1,6 @@
-import IORedis from 'ioredis';
-import { REDIS_CHANNEL } from '@solagent/shared';
-import type { ExecResult } from '@solagent/shared';
+import { Redis as IORedis } from 'ioredis';
+import { REDIS_CHANNEL } from '@archon/shared';
+import type { ExecResult } from '@archon/shared';
 
 let _publisher: IORedis | null = null;
 

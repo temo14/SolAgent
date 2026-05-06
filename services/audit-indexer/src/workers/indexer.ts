@@ -2,7 +2,7 @@ import IORedis from 'ioredis';
 import type { FastifyBaseLogger } from 'fastify';
 import { Prisma } from '@prisma/client';
 
-import { REDIS_CHANNEL, type ExecResult, type MemoProofV1 } from '@solagent/shared';
+import { REDIS_CHANNEL, type ExecResult, type MemoProofV1 } from '@archon/shared';
 import { getPrisma } from '../lib/prisma.js';
 
 /** Anomaly threshold multiplier: flag if observed > threshold × ANOMALY_FACTOR */

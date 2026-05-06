@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DEFAULT_MAX_SLIPPAGE_BPS } from '../constants.js';
 
 // ─── Enumerations ────────────────────────────────────────────────────────────
 
@@ -19,15 +20,6 @@ export const ActionType = {
   PAUSE_ALL: 'pause_all',
 } as const;
 export type ActionType = (typeof ActionType)[keyof typeof ActionType];
-
-export const SupportedAsset = {
-  SOL: 'SOL',
-  USDC: 'USDC',
-  USDT: 'USDT',
-  JUP: 'JUP',
-  BONK: 'BONK',
-} as const;
-export type SupportedAsset = (typeof SupportedAsset)[keyof typeof SupportedAsset];
 
 // Mirror Prisma enums for use in service logic without importing @prisma/client
 export const RuleStatus = {
@@ -82,7 +74,7 @@ export const TriggerSchema = z.object({
     'time_cron',
     'outflow_exceeded',
   ]),
-  asset: z.enum(['SOL', 'USDC', 'USDT', 'JUP', 'BONK']),
+  asset: z.string().min(2).max(50),
   threshold: z.number(),
   cron_expression: z.string().optional(),
   window_seconds: z.number().optional(),
@@ -107,7 +99,7 @@ export const ActionSchema = z.object({
   to_asset: z.string().optional(),
   amount: z.number(),
   recipient: z.string().optional(),
-  max_slippage_bps: z.number().default(50),
+  max_slippage_bps: z.number().default(DEFAULT_MAX_SLIPPAGE_BPS),
 });
 
 export const ConditionsSchema = z.object({
@@ -115,13 +107,13 @@ export const ConditionsSchema = z.object({
   max_fires_per_day: z.number().default(10),
 });
 
-export const SolAgentRuleSchema = z.object({
+export const ArchonRuleSchema = z.object({
   trigger: TriggerSchema,
   action: ActionSchema,
   conditions: ConditionsSchema,
 });
 
-export type SolAgentRule = z.infer<typeof SolAgentRuleSchema>;
+export type ArchonRule = z.infer<typeof ArchonRuleSchema>;
 
 // ─── On-chain Memo Proof ──────────────────────────────────────────────────────
 
@@ -131,7 +123,7 @@ export interface MemoProofV1 {
   wid: string;        // agent wallet pubkey
   trig: {
     type: TriggerType;
-    asset: SupportedAsset;
+    asset: string;
     threshold: number;
     observed: number;
     slot: number;
@@ -235,14 +227,6 @@ export type HeliusWebhookPayload = z.infer<typeof HeliusWebhookPayloadSchema>;
 
 // ─── BullMQ Job Payloads ──────────────────────────────────────────────────────
 
-export interface EvalJobPayload {
-  ruleId: string;
-  walletPubkey: string;
-  triggerEventSig: string;
-  triggerSlot: number;
-  observedValue: number;
-}
-
 export interface ExecJobPayload {
   ruleId: string;
   walletPubkey: string;
@@ -251,7 +235,7 @@ export interface ExecJobPayload {
   triggerEventSig: string;
   triggerSlot: number;
   observedValue: number;
-  parsedRule: SolAgentRule;
+  parsedRule: ArchonRule;
   /**
    * True when this job is the single price-deviation retry.
    * The worker updates the existing PRICE_DEVIATION_ABORT log

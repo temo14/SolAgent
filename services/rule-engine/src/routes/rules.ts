@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
-import { ERROR_CODES, REDIS_CHANNEL, isValidIanaTimeZone } from '@solagent/shared';
+import { ERROR_CODES, REDIS_CHANNEL, isValidIanaTimeZone } from '@archon/shared';
 import { getPrisma } from '../lib/prisma.js';
 import { parseRuleWithQvac, QvacError } from '../lib/qvac.js';
 import { simulateRule } from '../lib/simulate.js';
@@ -57,6 +57,41 @@ function computeRuleHash(parsedRule: unknown): string {
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
 export async function ruleRoutes(server: FastifyInstance): Promise<void> {
+  /**
+   * POST /rules/parse
+   * Parses a natural-language rule via QVAC and returns the structured result.
+   * Does NOT save anything to the database — pure preview endpoint.
+   * The frontend uses this to show the user what the LLM understood before they confirm.
+   */
+  server.post(
+    '/parse',
+    { onRequest: [server.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const bodyParse = SimulateBodySchema.safeParse(request.body);
+      if (!bodyParse.success) {
+        return reply.status(400).send({
+          ok: false,
+          errorCode: ERROR_CODES.RULE_VALIDATION_FAIL,
+          message: 'Invalid request body',
+          detail: bodyParse.error.flatten(),
+        });
+      }
+
+      let parsedRule;
+      try {
+        parsedRule = await parseRuleWithQvac(bodyParse.data.rawInput);
+      } catch (err) {
+        if (err instanceof QvacError) {
+          const status = err.errorCode === ERROR_CODES.QVAC_UNAVAILABLE ? 503 : 422;
+          return reply.status(status).send({ ok: false, errorCode: err.errorCode, message: err.message });
+        }
+        throw err;
+      }
+
+      return reply.send({ ok: true, data: { parsedRule } });
+    },
+  );
+
   /**
    * POST /rules/simulate
    * Parses a natural-language rule via QVAC then runs a 7-day back-simulation
@@ -226,7 +261,7 @@ export async function ruleRoutes(server: FastifyInstance): Promise<void> {
           maxAmountUsd: true,
           maxFiresDay: true,
           createdAt: true,
-          agentWallet: { select: { pubkey: true } },
+          agentWallet: { select: { delegatePubkey: true } },
         },
       });
 
@@ -270,7 +305,7 @@ export async function ruleRoutes(server: FastifyInstance): Promise<void> {
             activatedAt: true,
             pausedAt: true,
             pauseReason: true,
-            agentWallet: { select: { pubkey: true, id: true } },
+            agentWallet: { select: { delegatePubkey: true, id: true } },
             _count: { select: { executions: true } },
           },
           orderBy: { createdAt: 'desc' },
@@ -302,7 +337,7 @@ export async function ruleRoutes(server: FastifyInstance): Promise<void> {
       const rule = await prisma.rule.findFirst({
         where: { id, userId },
         include: {
-          agentWallet: { select: { pubkey: true } },
+          agentWallet: { select: { delegatePubkey: true } },
           executions: {
             orderBy: { createdAt: 'desc' },
             take: 10,
@@ -370,7 +405,7 @@ export async function ruleRoutes(server: FastifyInstance): Promise<void> {
       // Fetch agentWallet for side-effects below
       const ruleWithWallet = await prisma.rule.findFirst({
         where: { id, userId },
-        include: { agentWallet: { select: { pubkey: true } } },
+        include: { agentWallet: { select: { id: true, delegatePubkey: true } } },
       });
       if (ruleWithWallet === null) {
         return reply.status(404).send({ ok: false, message: 'Rule not found' });
@@ -388,23 +423,24 @@ export async function ruleRoutes(server: FastifyInstance): Promise<void> {
       });
 
       if (status === 'ACTIVE') {
-        const agentWalletPubkey = ruleWithWallet.agentWallet.pubkey;
+        const { id: agentWalletId, delegatePubkey } = ruleWithWallet.agentWallet;
 
-        // Publish to Redis so execution-engine spins up a per-wallet worker
+        // Publish agentWalletId so execution-engine spins up a per-wallet queue worker.
         const { getPublisher } = await import('../lib/redis.js');
         getPublisher()
           .publish(
             REDIS_CHANNEL.RULE_ACTIVATED,
-            JSON.stringify({ ruleId: id, agentWalletPubkey }),
+            JSON.stringify({ ruleId: id, agentWalletId }),
           )
           .catch((err: unknown) =>
             request.log.warn({ err, ruleId: id }, 'Failed to publish rule-activated event'),
           );
 
-        // Register agent wallet with Helius enhanced webhook (non-fatal on error)
-        registerHeliusWebhook(agentWalletPubkey).catch((err: unknown) =>
+        // Register the agent keypair (delegatePubkey) with Helius so balance-change
+        // events reach the condition evaluator.  Idempotent — safe to call repeatedly.
+        registerHeliusWebhook(delegatePubkey).catch((err: unknown) =>
           request.log.warn(
-            { err, agentWalletPubkey, ruleId: id },
+            { err, delegatePubkey, ruleId: id },
             'Helius webhook registration failed — manual registration may be needed',
           ),
         );

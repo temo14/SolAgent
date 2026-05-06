@@ -1,16 +1,14 @@
 import { createHash } from 'crypto';
 import { TransactionInstruction, PublicKey } from '@solana/web3.js';
-import type { MemoProofV1, SolAgentRule } from '@solagent/shared';
+import { MEMO_MAX_BYTES, MEMO_PROOF_VERSION, type MemoProofV1, type ArchonRule } from '@archon/shared';
 
 /** Memo Program v2 address (mainnet + devnet). */
 export const MEMO_PROGRAM_V2 = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
 
-const MEMO_MAX_BYTES = 350;
-
 interface BuildMemoOptions {
   ruleId: string;
   agentWalletPubkey: string;
-  parsedRule: SolAgentRule;
+  parsedRule: ArchonRule;
   triggerSlot: number;
   observedValue: number;
   priceUsed?: number;
@@ -31,7 +29,7 @@ export function buildMemoProof(opts: BuildMemoOptions): MemoProofV1 {
     .slice(0, 16);
 
   const proof: MemoProofV1 = {
-    v: 1,
+    v: MEMO_PROOF_VERSION,
     rid: ruleId.replace(/-/g, '').slice(0, 8),
     wid: agentWalletPubkey,
     trig: {

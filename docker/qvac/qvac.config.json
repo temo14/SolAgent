@@ -1,7 +1,7 @@
 {
   "serve": {
     "models": {
-      "solagent-parser": {
+      "archon-parser": {
         "model": "QWEN3_600M_INST_Q4",
         "default": true,
         "config": { "ctx_size": 8192 }

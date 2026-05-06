@@ -1,6 +1,6 @@
 {
   "license": "ISC",
-  "name": "solAgent",
+  "name": "archon",
   "private": true,
   "workspaces": [
     "shared",

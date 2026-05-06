@@ -6,6 +6,9 @@ import fastifyRateLimit from '@fastify/rate-limit';
 import { authRoutes } from './routes/auth.js';
 import { agentWalletRoutes } from './routes/agent-wallet.js';
 import { sseRoutes } from './routes/sse.js';
+import { notificationRoutes } from './routes/notifications.js';
+import { statsRoutes } from './routes/stats.js';
+import { marketplaceRoutes } from './routes/marketplace.js';
 import { disconnectPrisma } from './lib/prisma.js';
 import { disconnectRedis } from './lib/redis.js';
 import type { JwtPayload } from './types.js';
@@ -33,7 +36,7 @@ async function buildServer(): Promise<FastifyInstance> {
   await server.register(fastifyCors, {
     origin: process.env.CORS_ORIGIN ?? 'http://localhost:5173',
     credentials: true,
-    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   });
 
   // ── Rate limiting (in-memory; swap for Redis store in production) ─────────
@@ -72,6 +75,9 @@ async function buildServer(): Promise<FastifyInstance> {
   await server.register(authRoutes, { prefix: '/auth' });
   await server.register(agentWalletRoutes, { prefix: '/agent-wallets' });
   await server.register(sseRoutes, { prefix: '/ws' });
+  await server.register(notificationRoutes, { prefix: '/notifications' });
+  await server.register(statsRoutes, { prefix: '/stats' });
+  await server.register(marketplaceRoutes, { prefix: '/marketplace' });
 
   // ── Health check ─────────────────────────────────────────────────────────
   server.get('/health', async (_req, reply) => {

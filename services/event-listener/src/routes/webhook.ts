@@ -1,5 +1,5 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { REDIS_CHANNEL, ERROR_CODES, HeliusWebhookPayloadSchema } from '@solagent/shared';
+import { REDIS_CHANNEL, ERROR_CODES, HeliusWebhookPayloadSchema } from '@archon/shared';
 import { validateHeliusHmac } from '../lib/hmac.js';
 import { getRedis } from '../lib/redis.js';
 

@@ -27,7 +27,7 @@ export function buildSiwsMessage(params: {
     `${params.domain} wants you to sign in with your Solana account:`,
     params.walletPubkey,
     '',
-    'Statement: Sign in to SolAgent. This will not trigger a transaction.',
+    'Statement: Sign in to Archon. This will not trigger a transaction.',
     '',
     `Nonce: ${params.nonce}`,
     `Issued At: ${params.issuedAt}`,

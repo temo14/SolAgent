@@ -1,4 +1,4 @@
-import { SolAgentRuleSchema, SolAgentRule, ERROR_CODES } from '@solagent/shared';
+import { ArchonRuleSchema, ArchonRule, ERROR_CODES } from '@archon/shared';
 
 export class QvacError extends Error {
   public readonly errorCode: string;
@@ -17,9 +17,7 @@ interface OpenAIChatCompletionResponse {
   error?: { message?: string };
 }
 
-function buildRuleParsingPrompt(userInput: string): string {
-  // /no_think disables Qwen3's chain-of-thought mode, keeping the response token-light.
-  return `/no_think
+const SYSTEM_PROMPT = `/no_think
 You are a JSON-only API for a Solana wallet automation system.
 Parse the user instruction and return a single JSON object. No explanation, no markdown, no preamble.
 
@@ -35,7 +33,7 @@ EXAMPLE 3 OUTPUT: {"trigger":{"type":"time_cron","asset":"SOL","threshold":0,"cr
 
 SCHEMA (use only the values listed):
 trigger.type: balance_below | balance_above | price_below | price_above | time_cron | outflow_exceeded
-trigger.asset: SOL | USDC | USDT | JUP | BONK
+trigger.asset: any token symbol (e.g. SOL, USDC, WIF, JTO, BONK) or full SPL mint address
 trigger.threshold: number (use 0 for time_cron)
 trigger.cron_expression: cron string e.g. "* * * * *" (only for time_cron)
 trigger.until_local_hour: integer 0-23 — stop at or after this local hour when user does NOT say UTC (optional, time_cron only). Omit if user said UTC/Zulu.
@@ -48,9 +46,13 @@ action.amount: number
 action.recipient: string (optional, wallet address)
 action.max_slippage_bps: number (default 50; use 0 for transfers)
 conditions.max_amount_usd: number
-conditions.max_fires_per_day: number (for every-minute rules set to 1440; default 10)
+conditions.max_fires_per_day: number (for every-minute rules set to 1440; default 10)`;
 
-USER INSTRUCTION: "${userInput}"`;
+function buildMessages(userInput: string): Array<{ role: string; content: string }> {
+  return [
+    { role: 'system', content: SYSTEM_PROMPT },
+    { role: 'user',   content: userInput },
+  ];
 }
 
 function normalizeBaseUrl(url: string): string {
@@ -151,7 +153,7 @@ function parseModelJson(content: string): unknown {
  * @see https://docs.qvac.tether.io/http-server/
  * QVAC is mandatory — returns QvacError if unreachable or invalid output.
  */
-export async function parseRuleWithQvac(userInput: string): Promise<SolAgentRule> {
+export async function parseRuleWithQvac(userInput: string): Promise<ArchonRule> {
   const qvacBaseUrl = process.env.QVAC_BASE_URL;
   const qvacModel = process.env.QVAC_MODEL;
   const apiKey = process.env.QVAC_API_KEY;
@@ -182,7 +184,7 @@ export async function parseRuleWithQvac(userInput: string): Promise<SolAgentRule
       headers,
       body: JSON.stringify({
         model: qvacModel,
-        messages: [{ role: 'user', content: buildRuleParsingPrompt(userInput) }],
+        messages: buildMessages(userInput),
         stream: false,
         temperature: 0.1,
         // 2048 gives the Qwen3 think block room to close naturally (~50-600 tok)
@@ -253,7 +255,7 @@ export async function parseRuleWithQvac(userInput: string): Promise<SolAgentRule
     };
   }
 
-  const result = SolAgentRuleSchema.safeParse(parsed);
+  const result = ArchonRuleSchema.safeParse(parsed);
   if (!result.success) {
     throw new QvacError(
       `Rule schema validation failed: ${result.error.message}`,

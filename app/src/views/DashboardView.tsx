@@ -11,6 +11,8 @@ import {
 } from 'lucide-react';
 import { AgentStatus, AuditLogEntry } from '../types';
 import { Skeleton } from '../components/ui';
+import { MandatePanel } from '../components/mandate/MandatePanel';
+import { TelegramPanel } from '../components/notifications/TelegramPanel';
 
 interface DashboardViewProps {
   key?: string;
@@ -24,6 +26,18 @@ interface DashboardViewProps {
   onRefresh: () => void;
   onNavigateToRules: () => void;
   onNavigateToAudit: () => void;
+  // Mandate
+  agentWalletId: string;
+  agentPubkey: string;
+  mandatePda: string | null;
+  onMandateCreated: (pda: string) => void;
+  onNavigateToMandate: () => void;
+  jwt: string;
+  // Telegram
+  telegramChatId: string | null;
+  notifyOnExec: boolean;
+  notifyOnFail: boolean;
+  onTelegramLinked: () => void;
 }
 
 export function DashboardView({
@@ -37,6 +51,16 @@ export function DashboardView({
   onRefresh,
   onNavigateToRules,
   onNavigateToAudit,
+  agentWalletId,
+  agentPubkey,
+  mandatePda,
+  onMandateCreated,
+  onNavigateToMandate,
+  jwt,
+  telegramChatId,
+  notifyOnExec,
+  notifyOnFail,
+  onTelegramLinked,
 }: DashboardViewProps) {
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
@@ -120,7 +144,7 @@ export function DashboardView({
               >
                 <Cpu size={56} />
               </motion.div>
-              <h2 className="text-3xl font-bold mb-4 text-center">SolAgent</h2>
+              <h2 className="text-3xl font-bold mb-4 text-center">Archon</h2>
               <div className="flex items-center justify-center gap-2 mb-6 px-3 py-1 rounded-full bg-black/5 border border-black/5">
                 <div className={`w-2 h-2 rounded-full ${agentStatus === AgentStatus.ACTIVE ? 'bg-brand-safe' : 'bg-brand-stop'}`} />
                 <span className="text-[10px] font-bold uppercase tracking-widest text-black/40">
@@ -145,6 +169,27 @@ export function DashboardView({
           )}
         </div>
       </div>
+
+      {/* ── Security panels ──────────────────────────────────────────────────────── */}
+      {!isLoading && agentWalletId && agentPubkey && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <MandatePanel
+            agentWalletId={agentWalletId}
+            agentPubkey={agentPubkey}
+            mandatePda={mandatePda}
+            onMandateCreated={onMandateCreated}
+            onManage={onNavigateToMandate}
+            jwt={jwt}
+          />
+          <TelegramPanel
+            jwt={jwt}
+            telegramChatId={telegramChatId}
+            notifyOnExec={notifyOnExec}
+            notifyOnFail={notifyOnFail}
+            onLinked={onTelegramLinked}
+          />
+        </div>
+      )}
 
       {/* ── Recent activity ──────────────────────────────────────────────────────── */}
       <div className="phantom-card !p-0 overflow-hidden relative">

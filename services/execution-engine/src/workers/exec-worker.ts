@@ -1,6 +1,6 @@
-import { Job, Worker, QueueEvents } from 'bullmq';
+import { Job, Worker } from 'bullmq';
 import IORedis from 'ioredis';
-import { Keypair } from '@solana/web3.js';
+import { Keypair, type TransactionInstruction } from '@solana/web3.js';
 import { Prisma } from '@prisma/client';
 import type { FastifyBaseLogger } from 'fastify';
 
@@ -11,13 +11,14 @@ import {
   PRICE_DEV_REQUEUE_DELAY_MS,
   TX_CONFIRMATION_TIMEOUT_MS,
   DEFAULT_MAX_FIRES_PER_DAY,
+  REDIS_CHANNEL,
   ExecStatus,
+  ERROR_CODES,
   type ExecJobPayload,
   type ExecResult,
-} from '@solagent/shared';
+} from '@archon/shared';
 
 import { getPrisma } from '../lib/prisma.js';
-import { decryptAgentKeypair } from '../lib/crypto.js';
 import {
   getSolBalance,
   loadLookupTables,
@@ -31,8 +32,14 @@ import { buildMemoProof, buildMemoInstruction } from '../lib/memo.js';
 import { isCircuitBreakerTripped, triggerCircuitBreaker } from '../lib/circuit-breaker.js';
 import { publishExecResult } from '../lib/redis.js';
 import { getExecQueue } from '../lib/queue.js';
+import {
+  deriveMandatePda,
+  fetchMandateIsActive,
+  buildRecordExecutionInstruction,
+} from '../lib/mandate.js';
+import { deriveAgentKeypair } from '../lib/crypto.js';
 
-/** Minimum SOL balance the agent wallet must retain after fees (0.01 SOL). */
+/** Minimum SOL the agent wallet must retain after fees (0.01 SOL). */
 const MINIMUM_SOL_RESERVE = 0.01;
 
 // ─── Active worker registry (per-wallet queue) ────────────────────────────────
@@ -58,7 +65,6 @@ async function processExecJob(job: Job<ExecJobPayload>, log: FastifyBaseLogger):
   let execLogId: string;
 
   if (isRetry) {
-    // Price-deviation retry: update the existing PRICE_DEVIATION_ABORT record back to PROCESSING.
     const existing = await prisma.executionLog.findUnique({ where: { idempotencyKey } });
     if (!existing) {
       log.warn({ idempotencyKey }, 'Retry job found no existing execution log — discarding');
@@ -128,7 +134,7 @@ async function processExecJob(job: Job<ExecJobPayload>, log: FastifyBaseLogger):
     // ── 4. Load agent wallet ─────────────────────────────────────────────────
     const agentWallet = await prisma.agentWallet.findUnique({
       where: { id: agentWalletId },
-      include: { user: { select: { walletPubkey: true } } },
+      select: { isActive: true, ownerPubkey: true, mandatePda: true },
     });
     if (!agentWallet?.isActive) {
       await setStatus('FAILED', { errorCode: 'EXEC_SIMULATION_FAIL', errorDetail: 'Agent wallet inactive or not found' });
@@ -141,13 +147,16 @@ async function processExecJob(job: Job<ExecJobPayload>, log: FastifyBaseLogger):
       await setStatus('CIRCUIT_BREAKER_HALT');
       await triggerCircuitBreaker(ruleId, walletPubkey, prisma);
       log.warn({ ruleId }, 'Circuit breaker tripped — rule paused');
-      await emitResult({ ruleId, walletPubkey, idempotencyKey, status: 'CIRCUIT_BREAKER_HALT', errorCode: 'CIRCUIT_RULE_BREAKER' });
+      await emitResult({ ruleId, walletPubkey, idempotencyKey, status: 'CIRCUIT_BREAKER_HALT', errorCode: ERROR_CODES.CIRCUIT_RULE_BREAKER });
       return;
     }
 
+    // ── 6. Derive per-user agent keypair ────────────────────────────────────
+    const agentKeypair = deriveAgentKeypair(agentWallet.ownerPubkey);
+
     const { action } = parsedRule;
 
-    // ── 6. Dual-oracle price check for SWAP actions ─────────────────────────
+    // ── 7. Dual-oracle price check for SWAP actions ─────────────────────────
     let pythPriceUsd: number | undefined;
     let priceDeviation: number | undefined;
     let savedQuoteResponse: Awaited<ReturnType<typeof getJupiterQuote>>['quoteResponse'] | undefined;
@@ -181,9 +190,8 @@ async function processExecJob(job: Job<ExecJobPayload>, log: FastifyBaseLogger):
           errorCode: 'EXEC_PRICE_DEVIATION',
         });
 
-        // Re-queue exactly once (only on the first attempt, not the retry).
         if (!isRetry) {
-          const retryQueue = getExecQueue(agentWallet.pubkey);
+          const retryQueue = getExecQueue(agentWalletId);
           await retryQueue.add(
             'execute',
             { ...job.data, isRetry: true } satisfies ExecJobPayload,
@@ -205,48 +213,85 @@ async function processExecJob(job: Job<ExecJobPayload>, log: FastifyBaseLogger):
       }
     }
 
-    // ── 7. Decrypt agent keypair ─────────────────────────────────────────────
-    let keypair: Keypair;
-    try {
-      const secretKey = decryptAgentKeypair(
-        agentWallet.encryptedKey as Buffer,
-        agentWallet.keyIv as Buffer,
-        agentWallet.user.walletPubkey,
-      );
-      keypair = Keypair.fromSecretKey(secretKey);
-    } catch (err) {
-      await setStatus('FAILED', { errorCode: 'EXEC_SIMULATION_FAIL', errorDetail: 'Keypair decryption failed' });
-      log.error({ agentWalletId, err }, 'Keypair decryption failed');
-      return;
-    }
-
-    // Sanity-check: derived pubkey must match the stored one.
-    if (keypair.publicKey.toBase58() !== agentWallet.pubkey) {
-      await setStatus('FAILED', { errorCode: 'EXEC_SIMULATION_FAIL', errorDetail: 'Keypair pubkey mismatch' });
-      log.error({ agentWalletId }, 'Keypair pubkey mismatch — aborting');
-      return;
-    }
-
-    // ── 8. Balance check ────────────────────────────────────────────────────
-    const solBalance = await getSolBalance(agentWallet.pubkey);
+    // ── 8. Agent wallet SOL balance check ──────────────────────────────────
+    const agentKeypairPubkey = agentKeypair.publicKey.toBase58();
+    const solBalance = await getSolBalance(agentKeypairPubkey);
     if (solBalance < MINIMUM_SOL_RESERVE) {
       await setStatus('INSUFFICIENT_FUNDS', { errorCode: 'EXEC_INSUFFICIENT_FUNDS' });
       await emitResult({ ruleId, walletPubkey, idempotencyKey, status: 'INSUFFICIENT_FUNDS', errorCode: 'EXEC_INSUFFICIENT_FUNDS' });
-      log.warn({ agentWalletId, solBalance }, 'Insufficient funds for execution');
+      log.warn({ agentWalletId, agentKeypairPubkey, solBalance }, 'Insufficient agent wallet funds for execution');
       return;
     }
 
-    // ── 9. Build transaction (2-instruction atomicity) ───────────────────────
+    // ── 9. Mandate gate ───────────────────────────────────────────────────────
+    // If the agent wallet has a mandatePda recorded, the mandate check is REQUIRED.
+    // An RPC failure when a mandate exists aborts the execution — we never silently
+    // bypass limits the user set on-chain.
+    let mandateIx: TransactionInstruction | null = null;
+    const hasMandateInDb = Boolean(agentWallet.mandatePda);
+    try {
+      const { PublicKey: PK } = await import('@solana/web3.js');
+      const ownerPubkey = new PK(agentWallet.ownerPubkey);
+      const mandatePda = deriveMandatePda(ownerPubkey);
+      const isActive = await fetchMandateIsActive(mandatePda);
+
+      if (isActive === null && hasMandateInDb) {
+        // Account doesn't exist on-chain but DB says it should — abort.
+        await setStatus('CIRCUIT_BREAKER_HALT', { errorCode: 'MANDATE_NOT_FOUND' });
+        log.error({ ruleId }, 'Mandate PDA not found on-chain — execution halted');
+        return;
+      }
+
+      if (isActive === false) {
+        await setStatus('CIRCUIT_BREAKER_HALT', { errorCode: 'MANDATE_REVOKED' });
+        log.warn({ ruleId }, 'Mandate is revoked — execution halted');
+        return;
+      }
+
+      if (isActive === true) {
+        let lamports = 0n;
+        if (action.type === 'transfer') {
+          lamports = BigInt(Math.floor(action.amount * 1_000_000_000));
+        } else if (action.type === 'swap' && action.from_asset === 'SOL' && savedQuoteResponse) {
+          lamports = BigInt(
+            (savedQuoteResponse as { inAmount?: string }).inAmount ?? '0',
+          );
+        } else if (action.type === 'swap' && action.to_asset === 'SOL' && savedQuoteResponse) {
+          lamports = BigInt(
+            (savedQuoteResponse as { outAmount?: string }).outAmount ?? '0',
+          );
+        }
+        if (lamports > 0n) {
+          mandateIx = buildRecordExecutionInstruction(
+            mandatePda,
+            agentKeypair.publicKey,
+            lamports,
+          );
+          log.info({ ruleId, lamports: lamports.toString() }, 'Mandate gate: record_execution prepended');
+        }
+      }
+    } catch (err) {
+      if (hasMandateInDb) {
+        // Mandate exists in DB — RPC failure means we cannot verify limits. Abort.
+        await setStatus('CIRCUIT_BREAKER_HALT', { errorCode: 'MANDATE_CHECK_FAILED' });
+        log.error({ ruleId, err }, 'Mandate check failed and mandate is required — execution halted');
+        return;
+      }
+      // No mandate in DB — legacy wallet, safe to proceed.
+      log.warn({ ruleId, err }, 'Mandate gate check failed for non-mandate wallet — proceeding');
+    }
+
+    // ── 10. Build transaction ────────────────────────────────────────────────
     const memoProof = buildMemoProof({
       ruleId,
-      agentWalletPubkey: agentWallet.pubkey,
+      agentWalletPubkey: agentWallet.ownerPubkey,
       parsedRule,
       triggerSlot,
       observedValue,
       priceUsed: pythPriceUsd,
       priceSrc: pythPriceUsd !== undefined ? 'jupiter+pyth' : 'none',
     });
-    const memoIx = buildMemoInstruction(memoProof, keypair.publicKey);
+    const memoIx = buildMemoInstruction(memoProof, agentKeypair.publicKey);
 
     let mainInstructions;
     let altAddresses: string[] = [];
@@ -257,7 +302,7 @@ async function processExecJob(job: Job<ExecJobPayload>, log: FastifyBaseLogger):
       }
       const swapIxs = await getJupiterSwapInstructions(
         savedQuoteResponse,
-        keypair.publicKey.toBase58(),
+        agentKeypair.publicKey.toBase58(),
       );
       mainInstructions = swapIxs.instructions;
       altAddresses = swapIxs.altAddresses;
@@ -269,13 +314,12 @@ async function processExecJob(job: Job<ExecJobPayload>, log: FastifyBaseLogger):
       const { PublicKey } = await import('@solana/web3.js');
       mainInstructions = [
         buildTransferInstruction(
-          keypair.publicKey,
+          agentKeypair.publicKey,
           new PublicKey(action.recipient),
           action.amount,
         ),
       ];
     } else {
-      // alert_only / pause_all — no on-chain action; emit result and return.
       if (action.type === 'pause_all') {
         await prisma.rule.update({ where: { id: ruleId }, data: { status: 'PAUSED' } });
       }
@@ -286,15 +330,20 @@ async function processExecJob(job: Job<ExecJobPayload>, log: FastifyBaseLogger):
     }
 
     const lookupTables = altAddresses.length > 0 ? await loadLookupTables(altAddresses) : [];
+    const ixList = [
+      ...(mandateIx ? [mandateIx] : []),
+      ...mainInstructions,
+      memoIx,
+    ];
     const { tx, blockhash, lastValidBlockHeight } = await buildVersionedTransaction(
-      keypair.publicKey,
-      [...mainInstructions, memoIx],
+      agentKeypair.publicKey,
+      ixList,
       lookupTables,
     );
-    tx.sign([keypair]);
+    tx.sign([agentKeypair]);
 
-    // ── 10. Send and wait (60 s, no auto-retry on timeout) ──────────────────
-    log.info({ ruleId, agentWalletPubkey: agentWallet.pubkey }, 'Sending transaction');
+    // ── 11. Send and wait ────────────────────────────────────────────────────
+    log.info({ ruleId, agentKeypairPubkey }, 'Sending transaction');
     const { signature, confirmed } = await sendAndConfirm(
       tx,
       blockhash,
@@ -313,7 +362,7 @@ async function processExecJob(job: Job<ExecJobPayload>, log: FastifyBaseLogger):
       return;
     }
 
-    // ── 11. Mark confirmed, increment firesToday ─────────────────────────────
+    // ── 12. Mark confirmed, increment firesToday ─────────────────────────────
     await prisma.$transaction([
       prisma.executionLog.update({
         where: { id: execLogId },
@@ -347,10 +396,6 @@ async function processExecJob(job: Job<ExecJobPayload>, log: FastifyBaseLogger):
 
 // ─── Worker registry ─────────────────────────────────────────────────────────
 
-/**
- * Starts a BullMQ Worker (concurrency=1) for the given queue name
- * if one is not already running.
- */
 export function ensureWorkerForQueue(queueName: string, log: FastifyBaseLogger): void {
   if (activeWorkers.has(queueName)) return;
 
@@ -375,35 +420,41 @@ export function ensureWorkerForQueue(queueName: string, log: FastifyBaseLogger):
 /**
  * Bootstraps workers for all currently active agent wallets,
  * then subscribes to RULE_ACTIVATED for future wallets.
+ * Queue names are now keyed by agentWalletId (UUID) — not by pubkey.
  */
 export async function startWorkerRegistry(log: FastifyBaseLogger): Promise<void> {
   const prisma = getPrisma();
 
-  // Load all wallets that already have queues that might contain jobs.
+  // Verify AGENT_KEY_MASTER is set at startup so we fail fast on misconfiguration.
+  if (!process.env.AGENT_KEY_MASTER) {
+    log.error('AGENT_KEY_MASTER env var is missing — all executions will fail until fixed');
+  } else {
+    log.info('Agent key master loaded — per-user keypairs will be derived at execution time');
+  }
+
   const wallets = await prisma.agentWallet.findMany({
     where: { isActive: true },
-    select: { pubkey: true },
+    select: { id: true },
   });
 
   for (const w of wallets) {
-    ensureWorkerForQueue(execQueueName(w.pubkey), log);
+    ensureWorkerForQueue(execQueueName(w.id), log);
   }
 
   log.info({ count: wallets.length }, 'Execution workers bootstrapped');
 
-  // Subscribe to new-wallet events so we spin up workers dynamically.
   const subscriber = getRedisOpts();
   subscriber.on('error', (err) => log.warn({ err }, 'Worker-registry Redis error'));
 
-  subscriber.subscribe('solagent:rule:activated').catch((err: unknown) => {
+  subscriber.subscribe(REDIS_CHANNEL.RULE_ACTIVATED).catch((err: unknown) => {
     log.warn({ err }, 'Failed to subscribe to rule-activated channel');
   });
 
   subscriber.on('message', (_channel: string, message: string) => {
     try {
-      const { agentWalletPubkey } = JSON.parse(message) as { agentWalletPubkey?: string };
-      if (!agentWalletPubkey) return;
-      const queueName = execQueueName(agentWalletPubkey);
+      const { agentWalletId } = JSON.parse(message) as { agentWalletId?: string };
+      if (!agentWalletId) return;
+      const queueName = execQueueName(agentWalletId);
       ensureWorkerForQueue(queueName, log);
     } catch {
       // ignore malformed messages
@@ -411,9 +462,6 @@ export async function startWorkerRegistry(log: FastifyBaseLogger): Promise<void>
   });
 }
 
-/**
- * Gracefully shuts down all active workers.
- */
 export async function shutdownWorkers(): Promise<void> {
   await Promise.all([...activeWorkers.values()].map((w) => w.close()));
   activeWorkers.clear();

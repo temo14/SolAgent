@@ -6,9 +6,16 @@ node_modules
 test-ledger
 .yarn
 
-# Services build output
+graphify-out
+
+# Build output
 services/*/dist
 shared/dist
+app/dist
+
+# Generated artifacts
+solagent-full-sources.txt
+app/all-sources.txt
 
 # Env files (never commit real secrets)
 .env.devnet

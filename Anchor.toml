@@ -6,7 +6,7 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-sol_agent = "BfKWwCkP8fmvDsWznQXwW5PuvpateF9Nv6X4JMWTVFev"
+archon = "BfKWwCkP8fmvDsWznQXwW5PuvpateF9Nv6X4JMWTVFev"
 
 [registry]
 url = "https://api.apr.dev"

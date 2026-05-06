@@ -1,5 +1,5 @@
 {
-  "name": "solagent-qvac-server",
+  "name": "archon-qvac-server",
   "private": true,
   "dependencies": {
     "@qvac/cli": "^0.2.4",

@@ -18,20 +18,20 @@ vi.mock('../src/lib/prisma.js', () => ({
 import { computeIdempotencyKey, evaluateTrigger } from '../src/lib/evaluate.js';
 import { getSolBalanceLamports, getCurrentSlot } from '../src/lib/rpc.js';
 import { getAssetPriceUsd } from '../src/lib/price.js';
-import type { SolAgentRule, HeliusWebhookEvent } from '@solagent/shared';
+import type { ArchonRule, HeliusWebhookEvent } from '@archon/shared';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const SLOT = 285432910;
 
-function makeRule(trigger: SolAgentRule['trigger']): { id: string; parsedRule: SolAgentRule } {
+function makeRule(trigger: ArchonRule['trigger']): { id: string; parsedRule: ArchonRule } {
   return {
     id: 'test-rule-id',
     parsedRule: {
       trigger,
       action: { type: 'swap', amount: 10, max_slippage_bps: 50 },
       conditions: { max_amount_usd: 50, max_fires_per_day: 10 },
-    } as SolAgentRule,
+    } as ArchonRule,
   };
 }
 
@@ -217,10 +217,10 @@ describe('evaluateTrigger', () => {
       const rule = {
         id: 'test-id',
         parsedRule: {
-          trigger: { type: 'totally_unknown' as unknown as SolAgentRule['trigger']['type'], asset: 'SOL' as const, threshold: 0 },
+          trigger: { type: 'totally_unknown' as unknown as ArchonRule['trigger']['type'], asset: 'SOL' as const, threshold: 0 },
           action: { type: 'swap' as const, amount: 10, max_slippage_bps: 50 },
           conditions: { max_amount_usd: 50, max_fires_per_day: 10 },
-        } as SolAgentRule,
+        } as ArchonRule,
       };
       const result = await evaluateTrigger(rule, 'agent-pubkey', null);
       expect(result.matched).toBe(false);

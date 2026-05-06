@@ -1,6 +1,6 @@
 import { Queue } from 'bullmq';
 import IORedis from 'ioredis';
-import { execQueueName } from '@solagent/shared';
+import { execQueueName } from '@archon/shared';
 
 let _connection: IORedis | null = null;
 const queueCache = new Map<string, Queue>();
@@ -20,11 +20,11 @@ function getQueueConnection(): IORedis {
 }
 
 /**
- * Returns (or creates) a cached BullMQ Queue for the given wallet pubkey.
+ * Returns (or creates) a cached BullMQ Queue for the given agent wallet UUID.
  * Reused by both exec-worker retries and any future dispatch sites.
  */
-export function getExecQueue(walletPubkey: string): Queue {
-  const name = execQueueName(walletPubkey);
+export function getExecQueue(agentWalletId: string): Queue {
+  const name = execQueueName(agentWalletId);
   let q = queueCache.get(name);
   if (q === undefined) {
     q = new Queue(name, {

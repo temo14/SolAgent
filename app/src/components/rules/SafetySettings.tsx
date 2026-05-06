@@ -4,55 +4,37 @@ import { PermissionGuard } from '../common/PermissionGuard';
 interface SafetySettingsProps {
   maxSpend: number;
   onMaxSpendChange: (val: number) => void;
-  delay: number;
-  onDelayChange: (val: number) => void;
 }
 
-export const SafetySettings = ({ maxSpend, onMaxSpendChange, delay, onDelayChange }: SafetySettingsProps) => (
+export const SafetySettings = ({ maxSpend, onMaxSpendChange }: SafetySettingsProps) => (
   <div className="p-10 rounded-[44px] bg-brand-ink text-white shadow-2xl relative overflow-hidden flex flex-col h-full">
     <div className="absolute -top-10 -right-10 opacity-10"><ShieldCheck size={240} /></div>
-    
+
     <div className="relative z-10">
       <div className="flex items-center gap-2 text-brand-safe font-bold mb-8">
          <ShieldCheck size={20} />
          <h3 className="text-xl font-display uppercase tracking-tight">Safety Protocol</h3>
       </div>
-      
+
       <div className="grid grid-cols-1 gap-8 mb-10">
          <div className="space-y-4">
-            <label className="text-[10px] font-black uppercase tracking-widest text-white/30">Max Daily Spend ($)</label>
+            <label className="text-[10px] font-black uppercase tracking-widest text-white/30">Max Per Execution ($)</label>
             <div className="flex items-center gap-4">
-               <input 
-                 type="range" 
-                 min="100" 
-                 max="50000" 
-                 step="100" 
-                 value={maxSpend} 
+               <input
+                 type="range"
+                 min="100"
+                 max="50000"
+                 step="100"
+                 value={maxSpend}
                  onChange={(e) => onMaxSpendChange(parseInt(e.target.value))}
-                 className="flex-1 accent-brand-safe" 
+                 className="flex-1 accent-brand-safe"
                />
                <span className="text-lg font-mono font-bold">${maxSpend.toLocaleString()}</span>
             </div>
          </div>
-
-         <div className="space-y-4">
-            <label className="text-[10px] font-black uppercase tracking-widest text-white/30">Execution Delay (Safety Buffer)</label>
-            <div className="flex flex-wrap gap-2">
-               {[0, 2, 5, 10, 30].map((m) => (
-                 <button 
-                   key={m} 
-                   type="button"
-                   onClick={() => onDelayChange(m)}
-                   className={`px-4 py-2 rounded-xl text-[10px] font-bold border transition-all ${delay === m ? 'bg-brand-safe border-brand-safe text-brand-ink' : 'bg-white/5 border-white/10 text-white/40 hover:border-white/20'}`}
-                 >
-                   {m}m
-                 </button>
-               ))}
-            </div>
-         </div>
       </div>
 
-      <PermissionGuard 
+      <PermissionGuard
         authorized={[
           "Swap tokens for optimization",
           "Move yields to YOUR verified vault",

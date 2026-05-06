@@ -2,7 +2,7 @@ import { motion } from 'motion/react';
 import { Fingerprint } from 'lucide-react';
 import { AuditLogEntry } from '../types';
 import { AuditCard } from '../components/audit/AuditCard';
-import { EmptyState } from '../components/ui';
+import { EmptyState, Skeleton } from '../components/ui';
 import { useState } from 'react';
 
 interface AuditLogViewProps {
@@ -11,7 +11,7 @@ interface AuditLogViewProps {
   isLoading?: boolean;
 }
 
-export const AuditLogView = ({ auditLog }: AuditLogViewProps) => {
+export const AuditLogView = ({ auditLog, isLoading }: AuditLogViewProps) => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   return (
@@ -26,10 +26,14 @@ export const AuditLogView = ({ auditLog }: AuditLogViewProps) => {
         </div>
       </div>
 
-      {auditLog.length === 0 ? (
-        <EmptyState 
+      {isLoading ? (
+        <div className="space-y-8">
+          {[1, 2, 3].map((i) => <Skeleton key={i} className="h-48 rounded-[44px]" />)}
+        </div>
+      ) : auditLog.length === 0 ? (
+        <EmptyState
            icon={Fingerprint}
-           title="No History Found" 
+           title="No History Found"
            description="Your wallet is currently in a state of rest. Actions will appear here as rules trigger."
         />
       ) : (
@@ -37,9 +41,9 @@ export const AuditLogView = ({ auditLog }: AuditLogViewProps) => {
           <div className="absolute left-[3px] md:left-[23px] top-0 bottom-0 w-px bg-black/5 border-dashed border-l" />
           <div className="space-y-12">
             {auditLog.map((entry) => (
-              <AuditCard 
-                key={entry.id} 
-                entry={entry} 
+              <AuditCard
+                key={entry.id}
+                entry={entry}
                 isExpanded={expandedId === entry.id}
                 onToggle={() => setExpandedId(expandedId === entry.id ? null : entry.id)}
               />
