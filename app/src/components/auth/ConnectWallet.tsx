@@ -133,7 +133,17 @@ export function ConnectWallet() {
     clearError();
     setConnectError(null);
     pendingConnect.current = true;
-    select(PhantomWalletName);
+    if (wallet?.adapter.name === PhantomWalletName) {
+      // Phantom already selected — select() is a no-op so the effect won't fire; connect directly.
+      walletConnect().catch((err: unknown) => {
+        pendingConnect.current = false;
+        setConnectError(
+          err instanceof Error ? err.message : 'Wallet connect failed',
+        );
+      });
+    } else {
+      select(PhantomWalletName);
+    }
   };
 
   const handleDisconnect = () => {
