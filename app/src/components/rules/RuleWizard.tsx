@@ -8,14 +8,12 @@ import {
   ShieldCheck,
   Fingerprint,
   AlertTriangle,
-  CheckCircle,
   TrendingUp,
   TrendingDown,
   Repeat,
   Send,
   ChevronRight,
 } from 'lucide-react';
-import { SafetySettings } from './SafetySettings';
 import type { BackendRule } from '../../hooks/useRules';
 
 // ─── Templates ───────────────────────────────────────────────────────────────
@@ -78,23 +76,83 @@ interface BackendAction {
   max_slippage_bps?: number;
 }
 
+function ordinal(n: number): string {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return s[(v - 20) % 10] ?? s[v] ?? s[0];
+}
+
 function describeCron(expr: string): string {
   if (!expr) return 'On a schedule';
-  const p = expr.trim().split(/\s+/);
+  let p = expr.trim().split(/\s+/);
+  if (p.length === 6) p = p.slice(1);
   if (p.length !== 5) return `Cron: ${expr}`;
-  const [min, hour, , , dow] = p;
+  const [min, hour, dom, , dow] = p;
+
   if (expr === '* * * * *') return 'Every minute';
-  if (min === '0' && hour === '*') return 'Every hour';
-  if (dow !== '*') {
-    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    const dayName = days[parseInt(dow, 10)] ?? `day ${dow}`;
-    if (min !== '*' && hour !== '*')
-      return `Every ${dayName} at ${hour.padStart(2, '0')}:${min.padStart(2, '0')} UTC`;
-    return `Every ${dayName}`;
+
+  // Step values  */N * * * *  or  0 */N * * *
+  if (min.startsWith('*/') && hour === '*') {
+    const n = parseInt(min.slice(2), 10);
+    return `Every ${n} minute${n !== 1 ? 's' : ''}`;
   }
+  if (min === '0' && hour.startsWith('*/')) {
+    const n = parseInt(hour.slice(2), 10);
+    return `Every ${n} hour${n !== 1 ? 's' : ''}`;
+  }
+  if (min === '0' && hour === '*') return 'Every hour';
+
+  // Day-of-week patterns
+  if (dow !== '*') {
+    const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const timeStr = min !== '*' && hour !== '*'
+      ? ` at ${hour.padStart(2, '0')}:${min.padStart(2, '0')} UTC`
+      : '';
+    if (dow === '1-5') return `Every weekday${timeStr}`;
+    if (dow === '0,6' || dow === '6,0') return `Every weekend${timeStr}`;
+    const dayNum = parseInt(dow, 10);
+    const dayName = DAYS[dayNum] ?? `day ${dow}`;
+    return `Every ${dayName}${timeStr}`;
+  }
+
+  // Day-of-month
+  if (dom !== '*') {
+    const d = parseInt(dom, 10);
+    const suffix = ordinal(d);
+    const timeStr = min !== '*' && hour !== '*'
+      ? ` at ${hour.padStart(2, '0')}:${min.padStart(2, '0')} UTC`
+      : '';
+    return `On the ${d}${suffix} of each month${timeStr}`;
+  }
+
+  // Comma-separated hours  e.g. "0 0,12 * * *"
+  if (min === '0' && hour.includes(',')) {
+    const count = hour.split(',').length;
+    return `${count} times a day`;
+  }
+
   if (min !== '*' && hour !== '*')
     return `Daily at ${hour.padStart(2, '0')}:${min.padStart(2, '0')} UTC`;
+
   return `Cron: ${expr}`;
+}
+
+function describeLimit(c: { max_amount_usd: number; max_fires_per_day: number }, triggerType: string): string[] {
+  const lines: string[] = [];
+
+  if (triggerType === 'time_cron') {
+    if (c.max_fires_per_day < 1440) {
+      lines.push(
+        c.max_fires_per_day <= 120
+          ? `Stops after ${c.max_fires_per_day} execution${c.max_fires_per_day !== 1 ? 's' : ''}`
+          : `Up to ${c.max_fires_per_day} times per day`,
+      );
+    }
+  } else if (c.max_fires_per_day <= 5) {
+    lines.push(`Fires at most ${c.max_fires_per_day} time${c.max_fires_per_day !== 1 ? 's' : ''} per day`);
+  }
+
+  return lines;
 }
 
 function describeTrigger(t: BackendTrigger): string {
@@ -155,7 +213,7 @@ interface RuleWizardProps {
   onCancel: () => void;
   onComplete: () => void;
   parseRule: (rawInput: string) => Promise<ParsedPreview | null>;
-  createRule: (rawInput: string, agentWalletId: string, opts?: { maxAmountUsd?: number; maxFiresPerDay?: number }) => Promise<BackendRule | null>;
+  createRule: (rawInput: string, agentWalletId: string, opts?: { maxAmountUsd?: number; maxFiresPerDay?: number }, parsedRule?: BackendRule['parsedRule']) => Promise<BackendRule | null>;
   activateRule: (ruleId: string) => Promise<boolean>;
   agentWalletId: string;
 }
@@ -182,8 +240,8 @@ export const RuleWizard = ({
   const [parseError, setParseError] = useState<string | null>(null);
   const [deployError, setDeployError] = useState<string | null>(null);
   const [preview, setPreview] = useState<ParsedPreview | null>(null);
-  const [maxSpend, setMaxSpend] = useState(1000);
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
+  const [maxAmountUsdInput, setMaxAmountUsdInput] = useState<string>('');
 
   // Step 1: parse via QVAC (no DB write yet — pure preview)
   const handleParse = async () => {
@@ -199,8 +257,7 @@ export const RuleWizard = ({
         return;
       }
       setPreview(parsed);
-      // Pre-fill safety defaults from parsed conditions
-      setMaxSpend(parsed.conditions.max_amount_usd ?? 1000);
+      setMaxAmountUsdInput(String(parsed.conditions.max_amount_usd));
       setWizardStep(2);
     } catch (err) {
       setParseError(
@@ -219,10 +276,18 @@ export const RuleWizard = ({
     setIsDeploying(true);
     setDeployError(null);
     try {
-      const rule = await createRule(ruleInput.trim(), agentWalletId, {
-        maxAmountUsd: maxSpend,
-        maxFiresPerDay: preview.conditions.max_fires_per_day,
-      });
+      const parsedMaxUsd = parseFloat(maxAmountUsdInput);
+      const rule = await createRule(
+        ruleInput.trim(),
+        agentWalletId,
+        {
+          maxAmountUsd: Number.isFinite(parsedMaxUsd) && parsedMaxUsd > 0
+            ? parsedMaxUsd
+            : preview.conditions.max_amount_usd,
+          maxFiresPerDay: preview.conditions.max_fires_per_day,
+        },
+        preview,
+      );
       if (!rule) {
         setDeployError('Could not create rule. Please try again.');
         return;
@@ -242,7 +307,6 @@ export const RuleWizard = ({
 
   const trigger = preview?.trigger;
   const action = preview?.action;
-  const conditions = preview?.conditions;
 
   return (
     <motion.div
@@ -387,90 +451,72 @@ export const RuleWizard = ({
             <div>
               <h1 className="text-5xl font-semibold tracking-tight">Is this what you meant?</h1>
               <p className="text-black/40 text-lg font-medium mt-2">
-                Review what Aura understood before your rule goes live.
+                Review what Aura understood.
               </p>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* ── Confirmation card ── */}
-              <div className="p-10 rounded-[44px] bg-white border border-black/5 shadow-sm space-y-7">
-                {/* Original instruction */}
-                <div className="space-y-2">
-                  <div className="text-[10px] font-black text-black/25 uppercase tracking-widest">
-                    Your instruction
-                  </div>
-                  <p className="text-sm font-medium text-black/60 italic leading-relaxed border-l-2 border-black/10 pl-4">
-                    "{ruleInput}"
-                  </p>
-                </div>
-
-                <div className="w-full h-px bg-black/5" />
-
-                {/* Trigger */}
-                <div className="space-y-2">
-                  <div className="text-[10px] font-black text-black/25 uppercase tracking-widest">
-                    Trigger
-                  </div>
-                  <p className="text-base font-semibold text-brand-ink leading-snug">
-                    {trigger ? describeTrigger(trigger) : '—'}
-                  </p>
-                </div>
-
-                {/* Action */}
-                <div className="space-y-2">
-                  <div className="text-[10px] font-black text-black/25 uppercase tracking-widest">
-                    Action
-                  </div>
-                  <p className="text-base font-semibold text-brand-ink leading-snug">
-                    {action && trigger ? describeAction(action, trigger.asset) : '—'}
-                  </p>
-                  {action?.type === 'swap' && action.max_slippage_bps !== undefined && (
-                    <p className="text-xs text-black/40 font-medium">
-                      Max slippage: {(action.max_slippage_bps / 100).toFixed(1)}%
-                    </p>
-                  )}
-                </div>
-
-                {/* Limits */}
-                {conditions && (
-                  <div className="space-y-2">
-                    <div className="text-[10px] font-black text-black/25 uppercase tracking-widest">
-                      Limits
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <span className="px-3 py-1.5 rounded-xl bg-black/[0.04] text-xs font-semibold text-black/60">
-                        Max {conditions.max_fires_per_day} fire{conditions.max_fires_per_day === 1 ? '' : 's'}/day
-                      </span>
-                      <span className="px-3 py-1.5 rounded-xl bg-black/[0.04] text-xs font-semibold text-black/60">
-                        Max ${conditions.max_amount_usd.toLocaleString()} per execution
-                      </span>
-                    </div>
-                  </div>
-                )}
-
-                <div className="w-full h-px bg-black/5" />
-
-                <div className="flex items-center gap-2 text-brand-safe text-xs font-bold">
-                  <CheckCircle size={14} />
-                  Parsed by QVAC — review before activating
-                </div>
-                {action?.type === 'swap' && (
-                  <p className="text-[10px] text-black/30 font-medium">
-                    Archon fee: 0.1% of swap volume, collected via Jupiter referral program.
-                  </p>
-                )}
+            <div className="p-10 rounded-[44px] bg-white border border-black/5 shadow-sm space-y-7">
+              <div className="space-y-2">
+                <div className="text-[10px] font-black text-black/25 uppercase tracking-widest">Your instruction</div>
+                <p className="text-sm font-medium text-black/60 italic leading-relaxed border-l-2 border-black/10 pl-4 break-all">
+                  "{ruleInput}"
+                </p>
               </div>
 
-              <SafetySettings
-                maxSpend={maxSpend}
-                onMaxSpendChange={setMaxSpend}
-              />
+              <div className="w-full h-px bg-black/5" />
+
+              <div className="space-y-2">
+                <div className="text-[10px] font-black text-black/25 uppercase tracking-widest">Trigger</div>
+                <p className="text-base font-semibold text-brand-ink leading-snug">
+                  {trigger ? describeTrigger(trigger) : '—'}
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <div className="text-[10px] font-black text-black/25 uppercase tracking-widest">Action</div>
+                <p className="text-base font-semibold text-brand-ink leading-snug">
+                  {action && trigger ? describeAction(action, trigger.asset) : '—'}
+                </p>
+              </div>
+
+              {preview?.conditions && (() => {
+                const limitLines = describeLimit(preview.conditions, preview.trigger.type);
+                if (limitLines.length === 0) return null;
+                return (
+                  <>
+                    <div className="w-full h-px bg-black/5" />
+                    <div className="space-y-2">
+                      <div className="text-[10px] font-black text-black/25 uppercase tracking-widest">Limits</div>
+                      {limitLines.map((line, i) => (
+                        <p key={i} className="text-base font-semibold text-brand-ink leading-snug">{line}</p>
+                      ))}
+                    </div>
+                  </>
+                );
+              })()}
+
+              <div className="w-full h-px bg-black/5" />
+              <div className="space-y-2">
+                <div className="text-[10px] font-black text-black/25 uppercase tracking-widest">Max per execution (USD)</div>
+                <div className="flex items-center gap-2">
+                  <span className="text-base font-semibold text-black/40">$</span>
+                  <input
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={maxAmountUsdInput}
+                    onChange={(e) => setMaxAmountUsdInput(e.target.value)}
+                    className="w-36 bg-black/4 border border-black/10 rounded-xl px-3 py-1.5 text-base font-semibold text-brand-ink focus:outline-none focus:ring-2 focus:ring-black/10"
+                  />
+                  <span className="text-xs text-black/35 font-medium">auto-suggested · edit to override</span>
+                </div>
+              </div>
             </div>
 
             <div className="flex gap-4">
               <button
                 onClick={() => setWizardStep(1)}
-                className="px-10 py-6 rounded-[28px] bg-black/5 font-bold uppercase tracking-widest text-xs transition-all hover:bg-black/10 flex items-center gap-2"
+                className="px-10 py-6 rounded-[28px] bg-black/5 font-bold uppercase tracking-widest text-xs transition-all hover:bg-black/10"
               >
                 No, Edit
               </button>

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { NETWORK_LABEL } from '../lib/network';
 import { motion } from 'motion/react';
 import {
   TrendingUp,
@@ -96,7 +97,7 @@ export function PerformanceView({ jwt, agentWalletId, onNavigateToMandate }: Per
       .finally(() => setIsLoading(false));
   }, [jwt, agentWalletId]);
 
-  const network = 'devnet';
+  const network = NETWORK_LABEL;
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
@@ -276,7 +277,7 @@ export function PerformanceView({ jwt, agentWalletId, onNavigateToMandate }: Per
                 </div>
                 {ex.txSignature && (
                   <a
-                    href={`https://solscan.io/tx/${ex.txSignature}?cluster=${network}`}
+                    href={`https://explorer.solana.com/tx/${ex.txSignature}?cluster=${network}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-1 text-[10px] font-bold text-black/30 hover:text-brand-ink transition-colors shrink-0 ml-4"

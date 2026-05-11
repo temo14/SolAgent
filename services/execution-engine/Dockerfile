@@ -9,7 +9,8 @@ COPY shared/prisma ./shared/prisma
 COPY services/execution-engine/package.json ./services/execution-engine/
 
 RUN apk add --no-cache openssl libc6-compat
-RUN npm install --legacy-peer-deps
+ENV PRISMA_SKIP_POSTINSTALL_GENERATE=1
+RUN npm install --legacy-peer-deps --fetch-retries=5 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000
 
 # ── Source + build ────────────────────────────────────────────────────────────
 COPY shared ./shared
@@ -17,8 +18,8 @@ COPY services/execution-engine ./services/execution-engine
 
 RUN npx prisma generate --schema=shared/prisma/schema.prisma
 
-RUN npm run build -w @solagent/shared
-RUN npm run build -w @solagent/execution-engine
+RUN npm run build -w @archon/shared
+RUN npm run build -w @archon/execution-engine
 
 # ── Production image ──────────────────────────────────────────────────────────
 FROM node:22-alpine AS runner

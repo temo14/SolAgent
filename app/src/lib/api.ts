@@ -18,7 +18,8 @@ async function request<T>(
   path: string,
   opts: { jwt?: string; body?: unknown } = {},
 ): Promise<T> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const headers: Record<string, string> = {};
+  if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
   if (opts.jwt) headers['Authorization'] = `Bearer ${opts.jwt}`;
 
   const res = await fetch(path, {

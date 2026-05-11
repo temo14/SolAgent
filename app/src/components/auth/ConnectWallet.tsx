@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { NETWORK_LABEL } from '../../lib/network';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Puzzle,
@@ -524,7 +525,7 @@ export function ConnectWallet() {
           </p>
           <div className="flex items-center gap-1.5">
             <div className="w-1.5 h-1.5 rounded-full bg-brand-safe" />
-            <span className="text-[11px] text-black/30 font-medium">Devnet</span>
+            <span className="text-[11px] text-black/30 font-medium capitalize">{NETWORK_LABEL}</span>
           </div>
         </div>
       </footer>

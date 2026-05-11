@@ -49,6 +49,15 @@ async function runReconciliation(log: FastifyBaseLogger, mode: ReconcileMode): P
 
   for (const rule of filtered) {
     if (rule.firesToday >= rule.maxFiresDay) {
+      // Auto-pause time_cron rules that have hit their daily cap — they were
+      // created with a duration ("for 5 minutes") and should stop, not resume tomorrow.
+      if (mode === 'cron') {
+        await prisma.rule.update({
+          where: { id: rule.id },
+          data: { status: 'PAUSED', pausedAt: new Date(), pauseReason: 'daily_limit_reached' },
+        }).catch(() => undefined);
+        log.info({ ruleId: rule.id }, 'Reconciliation: rule auto-paused — daily fire limit reached');
+      }
       skipped++;
       continue;
     }

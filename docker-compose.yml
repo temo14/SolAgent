@@ -32,23 +32,23 @@ services:
       timeout: 3s
       retries: 10
 
-  # ── Tether QVAC HTTP server (OpenAI-compatible) — https://docs.qvac.tether.io/http-server/
-  # Model alias must match docker/qvac/qvac.config.json and QVAC_MODEL in .env.devnet
-  qvac:
-    build:
-      context: .
-      dockerfile: docker/qvac/Dockerfile
-    restart: unless-stopped
-    volumes:
-      - qvac_cache:/root/.qvac
-    ports:
-      - '11434:11434'
-    healthcheck:
-      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:11434/v1/models >/dev/null 2>&1 || exit 1']
-      interval: 20s
-      timeout: 15s
-      retries: 15
-      start_period: 120s
+  # ── Tether QVAC (offline fallback parser) — disabled while ANTHROPIC_API_KEY is set ──
+  # Uncomment to re-enable if you want offline/no-key fallback:
+  # qvac:
+  #   build:
+  #     context: .
+  #     dockerfile: docker/qvac/Dockerfile
+  #   restart: unless-stopped
+  #   volumes:
+  #     - qvac_cache:/root/.qvac
+  #   ports:
+  #     - '11434:11434'
+  #   healthcheck:
+  #     test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:11434/v1/models >/dev/null 2>&1 || exit 1']
+  #     interval: 20s
+  #     timeout: 15s
+  #     retries: 15
+  #     start_period: 120s
 
   # ── Prisma migration — runs once, exits 0, then services start ───────────────
 
@@ -57,7 +57,7 @@ services:
       context: .
       dockerfile: shared/Dockerfile.migrate
     env_file:
-      - .env.devnet
+      - ${COMPOSE_ENV_FILE:-.env.devnet}
     environment:
       DATABASE_URL: postgresql://solAgent:devpassword@postgres:5432/solAgent_devnet
     depends_on:
@@ -80,7 +80,7 @@ services:
       DATABASE_URL: postgresql://solAgent:devpassword@postgres:5432/solAgent_devnet
       REDIS_URL: redis://redis:6379
     env_file:
-      - .env.devnet
+      - ${COMPOSE_ENV_FILE:-.env.devnet}
     depends_on:
       postgres:
         condition: service_healthy
@@ -108,18 +108,19 @@ services:
     restart: unless-stopped
     ports:
       - '4001:4001'
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     environment:
       PORT: '4001'
       NODE_ENV: production
       DATABASE_URL: postgresql://solAgent:devpassword@postgres:5432/solAgent_devnet
       REDIS_URL: redis://redis:6379
       QVAC_BASE_URL: http://qvac:11434
+      # ANTHROPIC_API_KEY is forwarded from env_file (.env.devnet) below
     env_file:
-      - .env.devnet
-    # Wait until QVAC answers /v1/models — otherwise first rule creates hit connection reset.
+      - ${COMPOSE_ENV_FILE:-.env.devnet}
     depends_on:
-      qvac:
-        condition: service_healthy
       postgres:
         condition: service_healthy
       redis:
@@ -151,7 +152,7 @@ services:
       NODE_ENV: production
       REDIS_URL: redis://redis:6379
     env_file:
-      - .env.devnet
+      - ${COMPOSE_ENV_FILE:-.env.devnet}
     depends_on:
       redis:
         condition: service_healthy
@@ -181,7 +182,7 @@ services:
       DATABASE_URL: postgresql://solAgent:devpassword@postgres:5432/solAgent_devnet
       REDIS_URL: redis://redis:6379
     env_file:
-      - .env.devnet
+      - ${COMPOSE_ENV_FILE:-.env.devnet}
     depends_on:
       postgres:
         condition: service_healthy
@@ -215,7 +216,7 @@ services:
       DATABASE_URL: postgresql://solAgent:devpassword@postgres:5432/solAgent_devnet
       REDIS_URL: redis://redis:6379
     env_file:
-      - .env.devnet
+      - ${COMPOSE_ENV_FILE:-.env.devnet}
     depends_on:
       postgres:
         condition: service_healthy
@@ -249,7 +250,7 @@ services:
       DATABASE_URL: postgresql://solAgent:devpassword@postgres:5432/solAgent_devnet
       REDIS_URL: redis://redis:6379
     env_file:
-      - .env.devnet
+      - ${COMPOSE_ENV_FILE:-.env.devnet}
     depends_on:
       postgres:
         condition: service_healthy
@@ -275,12 +276,15 @@ services:
       context: .
       dockerfile: services/notification-service/Dockerfile
     restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     environment:
       NODE_ENV: production
       DATABASE_URL: postgresql://solAgent:devpassword@postgres:5432/solAgent_devnet
       REDIS_URL: redis://redis:6379
     env_file:
-      - .env.devnet
+      - ${COMPOSE_ENV_FILE:-.env.devnet}
     depends_on:
       postgres:
         condition: service_healthy
@@ -292,4 +296,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
-  qvac_cache:
+  # qvac_cache:  # re-add if re-enabling qvac

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Zap, Trash2, CheckCircle2, ShieldCheck, AlertTriangle, Store, X, Loader2 } from 'lucide-react';
+import { Zap, Trash2, CheckCircle2, ShieldCheck, AlertTriangle, Store, X, Loader2, RotateCcw } from 'lucide-react';
 import { AutomationRule } from '../../types';
 import { api } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
@@ -126,12 +126,16 @@ interface RuleCardProps {
   key?: string;
   rule: AutomationRule;
   onDelete: (id: string) => void;
+  onReactivate: (id: string) => void;
 }
 
-export const RuleCard = ({ rule, onDelete }: RuleCardProps) => {
+export const RuleCard = ({ rule, onDelete, onReactivate }: RuleCardProps) => {
   const [showPublish, setShowPublish] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isReactivating, setIsReactivating] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const isCircuitBreaker = rule.status === 'circuit_breaker';
+  const isInactive = rule.status === 'inactive';
 
   return (
     <>
@@ -139,7 +143,7 @@ export const RuleCard = ({ rule, onDelete }: RuleCardProps) => {
         layout
         className={`
           phantom-card group flex flex-col
-          ${rule.status === 'inactive' ? 'opacity-50' : ''}
+          ${isInactive ? 'opacity-60' : ''}
           ${isCircuitBreaker ? 'ring-2 ring-brand-stop/30' : ''}
         `}
       >
@@ -167,14 +171,20 @@ export const RuleCard = ({ rule, onDelete }: RuleCardProps) => {
             {showDeleteConfirm ? (
               <div className="flex items-center gap-1">
                 <button
-                  onClick={() => onDelete(rule.id)}
-                  className="px-3 py-1.5 rounded-xl bg-brand-stop text-white text-[10px] font-black hover:bg-red-600 transition-colors"
+                  onClick={async () => {
+                    setIsDeleting(true);
+                    try { await onDelete(rule.id); } finally { setIsDeleting(false); }
+                  }}
+                  disabled={isDeleting}
+                  className="px-3 py-1.5 rounded-xl bg-brand-stop text-white text-[10px] font-black hover:bg-red-600 transition-colors disabled:opacity-50 flex items-center gap-1"
                 >
+                  {isDeleting ? <Loader2 size={10} className="animate-spin" /> : null}
                   Delete
                 </button>
                 <button
                   onClick={() => setShowDeleteConfirm(false)}
-                  className="p-2 hover:bg-black/5 rounded-full text-black/30 transition-colors"
+                  disabled={isDeleting}
+                  className="p-2 hover:bg-black/5 rounded-full text-black/30 transition-colors disabled:opacity-30"
                 >
                   <X size={14} />
                 </button>
@@ -192,10 +202,65 @@ export const RuleCard = ({ rule, onDelete }: RuleCardProps) => {
 
         {/* Circuit breaker banner */}
         {isCircuitBreaker && (
-          <div className="mb-4 px-4 py-2.5 rounded-2xl bg-brand-stop/5 border border-brand-stop/10 flex items-center gap-2">
-            <AlertTriangle size={12} className="text-brand-stop shrink-0" />
-            <p className="text-[11px] font-bold text-brand-stop">
-              Circuit breaker tripped — rule paused for investigation
+          <div className="mb-4 px-4 py-3 rounded-2xl bg-amber-50 border border-amber-200 flex items-start justify-between gap-3">
+            <div className="flex items-start gap-2 min-w-0">
+              <AlertTriangle size={12} className="text-amber-500 shrink-0 mt-0.5" />
+              <div className="min-w-0">
+                <p className="text-[11px] font-bold text-amber-700">
+                  Rule paused after 3 failed executions
+                </p>
+                {rule.lastFailureReason && (
+                  <p className="text-[10px] text-amber-600 font-medium mt-0.5 leading-snug">
+                    Last error: {rule.lastFailureReason}
+                  </p>
+                )}
+              </div>
+            </div>
+            <button
+              onClick={async () => {
+                setIsReactivating(true);
+                await onReactivate(rule.id);
+                setIsReactivating(false);
+              }}
+              disabled={isReactivating}
+              className="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-xl bg-brand-stop/10 hover:bg-brand-stop/20 text-brand-stop text-[10px] font-black transition-colors disabled:opacity-50"
+            >
+              {isReactivating
+                ? <Loader2 size={10} className="animate-spin" />
+                : <RotateCcw size={10} />}
+              Reactivate
+            </button>
+          </div>
+        )}
+
+        {/* Paused — show resume button */}
+        {isInactive && (
+          <div className="mb-4 px-4 py-3 rounded-2xl bg-black/[0.03] border border-black/10 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-black/20 shrink-0" />
+              <p className="text-[11px] font-bold text-black/40">Rule is paused</p>
+            </div>
+            <button
+              onClick={async () => {
+                setIsReactivating(true);
+                await onReactivate(rule.id);
+                setIsReactivating(false);
+              }}
+              disabled={isReactivating}
+              className="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-xl bg-brand-safe/10 hover:bg-brand-safe/20 text-brand-safe text-[10px] font-black transition-colors disabled:opacity-50"
+            >
+              {isReactivating ? <Loader2 size={10} className="animate-spin" /> : <Zap size={10} />}
+              Resume
+            </button>
+          </div>
+        )}
+
+        {/* Last execution failed — visible on active rules before circuit breaker trips */}
+        {rule.status === 'active' && rule.lastFailureReason && (
+          <div className="mb-4 px-4 py-2.5 rounded-2xl bg-orange-50 border border-orange-200 flex items-start gap-2">
+            <AlertTriangle size={11} className="text-orange-500 shrink-0 mt-0.5" />
+            <p className="text-[10px] font-bold text-orange-700 leading-snug">
+              Last execution failed: {rule.lastFailureReason}
             </p>
           </div>
         )}
@@ -205,18 +270,18 @@ export const RuleCard = ({ rule, onDelete }: RuleCardProps) => {
             <h3 className="text-xl font-black tracking-tight leading-tight">{rule.name}</h3>
             {rule.status === 'active' && <CheckCircle2 size={14} className="text-brand-safe shrink-0" />}
           </div>
-          <p className="text-[13px] text-black/40 leading-relaxed min-h-[36px] font-medium">
-            {rule.description.length > 100 ? `${rule.description.slice(0, 100)}…` : rule.description}
+          <p className="text-[13px] text-black/40 leading-relaxed min-h-[36px] font-medium break-all">
+            {rule.description.length > 80 ? `${rule.description.slice(0, 80)}…` : rule.description}
           </p>
 
           <div className="pt-2 space-y-0.5">
-            <div className="p-4 rounded-t-2xl bg-black/[0.02] border border-black/5 text-[11px] font-mono">
+            <div className="p-4 rounded-t-2xl bg-black/[0.02] border border-black/5 text-[11px] font-mono overflow-hidden">
               <span className="font-extrabold text-black/20 uppercase tracking-widest mr-3 font-sans">If</span>
-              {rule.logic.condition}
+              <span className="break-all">{rule.logic.condition}</span>
             </div>
-            <div className="p-4 rounded-b-2xl bg-brand-ink text-white text-[11px] font-mono shadow-lg shadow-black/10">
+            <div className="p-4 rounded-b-2xl bg-brand-ink text-white text-[11px] font-mono shadow-lg shadow-black/10 overflow-hidden">
               <span className="font-extrabold text-white/40 uppercase tracking-widest mr-3 font-sans">Do</span>
-              {rule.logic.action}
+              <span className="break-all">{rule.logic.action}</span>
             </div>
           </div>
         </div>
@@ -229,23 +294,23 @@ export const RuleCard = ({ rule, onDelete }: RuleCardProps) => {
             <div className="space-y-1">
               <div className="flex justify-between text-[10px]">
                 <span className="text-black/40">Max / Exec</span>
-                <span className="font-bold">${(rule.limits?.maxSpendPerDay ?? 0).toLocaleString()}</span>
+                <span className="font-bold">${(rule.limits?.maxSpendPerExec ?? 0).toLocaleString()}</span>
               </div>
               <div className="flex justify-between text-[10px]">
-                <span className="text-black/40">Max / Day</span>
-                <span className="font-bold">{rule.limits?.maxFiresDay ?? '—'} fires</span>
+                <span className="text-black/40">Max fires / Day</span>
+                <span className="font-bold">{rule.limits?.maxFiresDay ?? '—'}</span>
               </div>
             </div>
           </div>
           <div className="p-4 rounded-3xl bg-black/[0.02] border border-black/5">
-            <div className="text-[8px] font-bold uppercase tracking-widest text-black/20 mb-2">Performance</div>
+            <div className="text-[8px] font-bold uppercase tracking-widest text-black/20 mb-2">Activity</div>
             <div className="space-y-1">
               <div className="flex justify-between text-[10px]">
-                <span className="text-black/40">Fires Today</span>
+                <span className="text-black/40">Fires today</span>
                 <span className="font-bold">{rule.executions}</span>
               </div>
               <div className="flex justify-between text-[10px]">
-                <span className="text-black/40">Activated</span>
+                <span className="text-black/40">Created</span>
                 <span className="font-bold">{rule.lastRun}</span>
               </div>
             </div>

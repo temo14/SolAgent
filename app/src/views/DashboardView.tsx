@@ -1,4 +1,5 @@
 import { motion } from 'motion/react';
+import { NETWORK_LABEL } from '../lib/network';
 import {
   Wallet,
   RefreshCw,
@@ -8,6 +9,7 @@ import {
   XCircle,
   Clock,
   RotateCcw,
+  AlertTriangle,
 } from 'lucide-react';
 import { AgentStatus, AuditLogEntry } from '../types';
 import { Skeleton } from '../components/ui';
@@ -74,7 +76,14 @@ export function DashboardView({
 
           <div className="relative z-10 h-full flex flex-col">
             <div className="flex items-center justify-between mb-12">
-              <span className="text-xs font-bold text-black/30 uppercase tracking-[0.2em]">Agent Wallet Balance</span>
+              <div>
+                <span className="text-xs font-bold text-black/30 uppercase tracking-[0.2em]">Agent Wallet</span>
+                {agentPubkey && (
+                  <p className="text-[10px] font-mono text-black/25 mt-1 select-all">
+                    {agentPubkey.slice(0, 8)}…{agentPubkey.slice(-6)}
+                  </p>
+                )}
+              </div>
               <motion.button
                 animate={{ rotate: isRefreshing ? 360 : 0 }}
                 onClick={onRefresh}
@@ -91,8 +100,8 @@ export function DashboardView({
                 <Skeleton className="h-10 w-1/3" />
               </div>
             ) : (
-              <div className="flex flex-col h-full">
-                <div className="flex items-baseline gap-4 mb-4">
+              <div className="flex flex-col h-full gap-4">
+                <div className="flex items-baseline gap-4">
                   {solBalance !== null ? (
                     <>
                       <h1 className="text-7xl font-black tracking-tighter leading-none">
@@ -104,8 +113,18 @@ export function DashboardView({
                     <h1 className="text-5xl font-black tracking-tighter leading-none text-black/20">—</h1>
                   )}
                 </div>
+
+                {solBalance !== null && solBalance < 0.05 && (
+                  <div className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-amber-50 border border-amber-200 w-fit">
+                    <AlertTriangle size={13} className="text-amber-500 shrink-0" />
+                    <span className="text-[11px] font-bold text-amber-700">
+                      Fund this wallet with SOL — rules can't execute without gas fees
+                    </span>
+                  </div>
+                )}
+
                 <p className="text-xs text-black/30 font-medium mt-auto">
-                  {activeRuleCount} active rule{activeRuleCount !== 1 ? 's' : ''} — devnet
+                  {activeRuleCount} active rule{activeRuleCount !== 1 ? 's' : ''} — {NETWORK_LABEL}
                 </p>
               </div>
             )}

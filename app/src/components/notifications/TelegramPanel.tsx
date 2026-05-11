@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { MessageCircle, Check, Loader2, X, Bell, BellOff } from 'lucide-react';
 import { api } from '../../lib/api';
@@ -21,22 +22,61 @@ export function TelegramPanel({
   const [isOpen, setIsOpen] = useState(false);
   const [isLinking, setIsLinking] = useState(false);
   const [deepLink, setDeepLink] = useState<string | null>(null);
+  const [botUsername, setBotUsername] = useState<string>('archon_agent_bot');
   const [error, setError] = useState<string | null>(null);
   const [savingExec, setSavingExec] = useState(false);
   const [savingFail, setSavingFail] = useState(false);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const isLinked = telegramChatId !== null;
+
+  // Poll for link completion while modal is open
+  useEffect(() => {
+    if (!isOpen || !deepLink) {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+      return;
+    }
+
+    pollingRef.current = setInterval(() => {
+      void (async () => {
+        try {
+          const res = await api.get<{ ok: boolean; data: { telegramChatId: string | null } }>(
+            '/api/notifications/settings',
+            jwt,
+          );
+          if (res.ok && res.data.telegramChatId) {
+            setIsOpen(false);
+            setDeepLink(null);
+            onLinked();
+          }
+        } catch {
+          // non-fatal
+        }
+      })();
+    }, 2000);
+
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    };
+  }, [isOpen, deepLink, jwt, onLinked]);
 
   const handleConnect = async () => {
     setIsLinking(true);
     setError(null);
     try {
-      const res = await api.post<{ ok: boolean; data: { deepLink: string } }>(
+      const res = await api.post<{ ok: boolean; data: { deepLink: string; botUsername: string } }>(
         '/api/notifications/telegram/link',
         {},
         jwt,
       );
       setDeepLink(res.data.deepLink);
+      setBotUsername(res.data.botUsername);
       setIsOpen(true);
     } catch {
       setError('Failed to generate link. Check that TELEGRAM_BOT_TOKEN is configured.');
@@ -59,12 +99,17 @@ export function TelegramPanel({
     setSaving(true);
     try {
       await api.put('/api/notifications/settings', { [key]: value }, jwt);
-      onLinked(); // triggers parent to refetch settings
+      onLinked();
     } catch {
       // non-fatal
     } finally {
       setSaving(false);
     }
+  };
+
+  const closeModal = () => {
+    setIsOpen(false);
+    onLinked();
   };
 
   return (
@@ -100,7 +145,6 @@ export function TelegramPanel({
 
       {isLinked ? (
         <div className="space-y-2">
-          {/* notifyOnExec toggle */}
           <div className="flex items-center justify-between px-3 py-2.5 rounded-2xl bg-black/[0.02] border border-black/[0.04]">
             <div className="flex items-center gap-2">
               <Bell size={12} className="text-black/30" />
@@ -114,7 +158,6 @@ export function TelegramPanel({
               <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${notifyOnExec ? 'translate-x-4' : ''}`} />
             </button>
           </div>
-          {/* notifyOnFail toggle */}
           <div className="flex items-center justify-between px-3 py-2.5 rounded-2xl bg-black/[0.02] border border-black/[0.04]">
             <div className="flex items-center gap-2">
               <BellOff size={12} className="text-black/30" />
@@ -139,48 +182,56 @@ export function TelegramPanel({
         <p className="mt-3 text-[11px] text-brand-stop font-medium">{error}</p>
       )}
 
-      {/* Deep link modal */}
-      <AnimatePresence>
-        {isOpen && deepLink && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm px-4"
-            onClick={(e) => { if (e.target === e.currentTarget) { setIsOpen(false); onLinked(); } }}
-          >
+      {createPortal(
+        <AnimatePresence>
+          {isOpen && deepLink && (
             <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              transition={{ type: 'spring', duration: 0.3 }}
-              className="bg-white rounded-[28px] p-8 w-full max-w-sm shadow-2xl text-center"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm px-4"
+              onClick={(e) => { if (e.target === e.currentTarget) closeModal(); }}
             >
-              <div className="w-16 h-16 rounded-[24px] bg-[#2AABEE] flex items-center justify-center mx-auto mb-5">
-                <MessageCircle size={32} className="text-white" />
-              </div>
-              <h2 className="text-xl font-black tracking-tight mb-2">Open Telegram Bot</h2>
-              <p className="text-xs text-black/40 font-medium mb-6 leading-relaxed">
-                Click the link below, then send <code className="bg-black/5 px-1 py-0.5 rounded font-mono">/start</code> to your bot to link your account. Link expires in 10 minutes.
-              </p>
-              <a
-                href={deepLink}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex w-full h-12 rounded-2xl bg-[#2AABEE] text-white text-sm font-black hover:bg-[#1a9de0] transition-colors items-center justify-center gap-2 mb-4"
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                transition={{ type: 'spring', duration: 0.3 }}
+                className="bg-white rounded-[28px] p-8 w-full max-w-sm shadow-2xl text-center"
               >
-                <MessageCircle size={16} /> Open @ArchonBot
-              </a>
-              <button
-                onClick={() => { setIsOpen(false); onLinked(); }}
-                className="text-xs text-black/30 font-bold hover:text-black/60 transition-colors flex items-center gap-1 mx-auto"
-              >
-                <Check size={12} /> Done, close
-              </button>
+                <div className="w-16 h-16 rounded-[24px] bg-[#2AABEE] flex items-center justify-center mx-auto mb-5">
+                  <MessageCircle size={32} className="text-white" />
+                </div>
+                <h2 className="text-xl font-black tracking-tight mb-2">Open Telegram Bot</h2>
+                <p className="text-xs text-black/40 font-medium mb-6 leading-relaxed">
+                  Click the link below, then send{' '}
+                  <code className="bg-black/5 px-1 py-0.5 rounded font-mono">/start</code>{' '}
+                  to the bot. The app will connect automatically. Link expires in 10 minutes.
+                </p>
+                <a
+                  href={deepLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex w-full h-12 rounded-2xl bg-[#2AABEE] text-white text-sm font-black hover:bg-[#1a9de0] transition-colors items-center justify-center gap-2 mb-4"
+                >
+                  <MessageCircle size={16} /> Open @{botUsername}
+                </a>
+                <div className="flex items-center justify-center gap-2 text-[10px] text-black/30 font-medium mb-4">
+                  <Loader2 size={11} className="animate-spin" />
+                  Waiting for you to send /start…
+                </div>
+                <button
+                  onClick={closeModal}
+                  className="text-xs text-black/30 font-bold hover:text-black/60 transition-colors flex items-center gap-1 mx-auto"
+                >
+                  <Check size={12} /> Done, close
+                </button>
+              </motion.div>
             </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          )}
+        </AnimatePresence>,
+        document.body,
+      )}
     </div>
   );
 }

@@ -40,6 +40,7 @@ function AuthenticatedApp() {
     parseRule,
     createRule,
     activateRule,
+    reactivateRule,
   } = useRules();
   // Audit events are indexed by the *user* signing wallet, not the agent keypair.
   const { auditLog, isLoading: auditLoading, prependLiveEntry } = useAudit(walletPubkey);
@@ -251,7 +252,7 @@ function AuthenticatedApp() {
               onNavigateToRules={() => setActiveView('rules-list')}
               onNavigateToAudit={() => setActiveView('audit-log')}
               agentWalletId={primaryAgentWallet?.id ?? ''}
-              agentPubkey={primaryAgentWallet?.ownerPubkey ?? ''}
+              agentPubkey={primaryAgentWallet?.delegatePubkey ?? ''}
               mandatePda={primaryAgentWallet?.mandatePda ?? null}
               onMandateCreated={(_pda: string) => void refreshAgentWallets()}
               onNavigateToMandate={() => setActiveView('mandate')}
@@ -274,6 +275,10 @@ function AuthenticatedApp() {
                 } catch (err) {
                   setError(err instanceof Error ? err.message : 'Failed to delete rule');
                 }
+              }}
+              onReactivateRule={async (id) => {
+                const ok = await reactivateRule(id);
+                if (!ok) setError('Failed to reactivate rule');
               }}
             />
           )}
@@ -337,7 +342,7 @@ function AuthenticatedApp() {
         <div className="hidden sm:block h-8 w-px bg-black/[0.08] shrink-0" />
         <div className="flex-1 min-w-0 pt-1 border-t border-black/[0.06] sm:border-t-0 sm:pt-0">
           <span className="text-[9px] font-extrabold uppercase tracking-widest text-black/35 block mb-1.5">
-            Agent wallet (fund devnet SOL)
+            Agent wallet — fund with SOL for gas fees
           </span>
           {agentPubkeyFull ? (
             <div className="flex items-start gap-2">

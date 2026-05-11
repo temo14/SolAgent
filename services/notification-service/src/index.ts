@@ -93,7 +93,7 @@ async function handleExecResult(result: ExecResult): Promise<void> {
       rule ? `Rule: "${rule.rawInput.slice(0, 80)}"` : '',
       shortTx ? `Tx: \`${shortTx}\`` : '',
       result.txSignature
-        ? `[View on Solscan](https://solscan.io/tx/${result.txSignature})`
+        ? `[View on Explorer](https://explorer.solana.com/tx/${result.txSignature}?cluster=${process.env.SOLANA_NETWORK === 'mainnet' ? '' : process.env.SOLANA_NETWORK ?? 'devnet'})`
         : '',
       rule ? `Fires today: ${rule.firesToday + 1}/${rule.maxFiresDay}` : '',
     ]

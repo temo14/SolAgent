@@ -114,18 +114,20 @@ export async function evaluateTrigger(
       if (event !== null) return NOT_MATCHED(eventSig, eventSlot); // cron only fires on poll path
 
       // End-time: prefer local wall-clock in schedule_timezone (browser IANA at rule create).
+      // Comparison is strictly-greater-than so the rule fires through the target hour
+      // ("until 4 PM" fires at 4:xx PM and stops at 5 PM).
       if (
         trigger.until_local_hour !== undefined &&
         trigger.schedule_timezone !== undefined &&
         isValidIanaTimeZone(trigger.schedule_timezone)
       ) {
         const localH = getHourInTimeZone(trigger.schedule_timezone);
-        if (localH !== null && localH >= trigger.until_local_hour) {
+        if (localH !== null && localH > trigger.until_local_hour) {
           return NOT_MATCHED(eventSig, eventSlot);
         }
       } else if (trigger.until_utc_hour !== undefined) {
         const nowHourUtc = new Date().getUTCHours();
-        if (nowHourUtc >= trigger.until_utc_hour) {
+        if (nowHourUtc > trigger.until_utc_hour) {
           return NOT_MATCHED(eventSig, eventSlot);
         }
       }
@@ -176,32 +178,89 @@ export async function evaluateTrigger(
   }
 }
 
-// ─── Minimal cron matcher ─────────────────────────────────────────────────────
+// ─── Full cron matcher ────────────────────────────────────────────────────────
 
 /**
- * Evaluates a basic 5-field cron expression against the current UTC time.
- * Supports: exact values, "*", and comma-separated lists per field.
- * Field order: minute hour day-of-month month day-of-week
+ * Evaluates a standard 5-field cron expression against the current UTC time.
  *
- * Example: "0 12 * * 5" = every Friday at 12:00 UTC
+ * Supported syntax per field (minute, hour, dom, month, dow):
+ *   *         — any value
+ *   N         — exact value
+ *   N,M,...   — list of values
+ *   N-M       — inclusive range
+ *   *\/N       — step (every N units from the range start)
+ *   N-M\/S     — range with step
+ *
+ * DOM/DOW semantics follow vixie-cron: when BOTH dom and dow are restricted
+ * (neither is "*"), a match on EITHER satisfies the day condition (OR logic).
+ * When only one is restricted the other acts as wildcard (AND logic).
+ *
+ * Examples:
+ *   "* * * * *"     every minute
+ *   "*\/5 * * * *"   every 5 minutes
+ *   "0 9 * * 1-5"   weekdays at 09:00
+ *   "0 12 15,20 * *" 15th and 20th of each month at noon
  */
 function matchesCronExpression(expression: string): boolean {
   if (!expression) return false;
-  const parts = expression.trim().split(/\s+/);
+  let parts = expression.trim().split(/\s+/);
+
+  // Accept 6-field expressions (seconds-prefixed) — drop the seconds field.
+  if (parts.length === 6) parts = parts.slice(1);
   if (parts.length !== 5) return false;
 
   const now = new Date();
-  const [min, hour, dom, mon, dow] = [
-    now.getUTCMinutes(),
-    now.getUTCHours(),
-    now.getUTCDate(),
-    now.getUTCMonth() + 1,
-    now.getUTCDay(),
-  ];
-  const fields = [min, hour, dom, mon, dow];
+  const curMin  = now.getUTCMinutes();
+  const curHour = now.getUTCHours();
+  const curDom  = now.getUTCDate();
+  const curMon  = now.getUTCMonth() + 1;
+  const curDow  = now.getUTCDay();
 
-  return parts.every((part, i) => {
+  function matchField(part: string, value: number, lo: number, hi: number): boolean {
     if (part === '*') return true;
-    return part.split(',').some((v) => parseInt(v, 10) === fields[i]);
-  });
+    for (const segment of part.split(',')) {
+      const slashIdx = segment.indexOf('/');
+      if (slashIdx !== -1) {
+        const step = parseInt(segment.slice(slashIdx + 1), 10);
+        if (isNaN(step) || step <= 0) continue;
+        const rangePart = segment.slice(0, slashIdx);
+        let start = lo;
+        let end   = hi;
+        if (rangePart !== '*') {
+          const dashIdx = rangePart.indexOf('-');
+          if (dashIdx !== -1) {
+            start = parseInt(rangePart.slice(0, dashIdx), 10);
+            end   = parseInt(rangePart.slice(dashIdx + 1), 10);
+          } else {
+            start = parseInt(rangePart, 10);
+          }
+        }
+        if (!isNaN(start) && !isNaN(end) && value >= start && value <= end && (value - start) % step === 0) return true;
+        continue;
+      }
+      const dashIdx = segment.indexOf('-');
+      if (dashIdx !== -1) {
+        const start = parseInt(segment.slice(0, dashIdx), 10);
+        const end   = parseInt(segment.slice(dashIdx + 1), 10);
+        if (!isNaN(start) && !isNaN(end) && value >= start && value <= end) return true;
+        continue;
+      }
+      if (parseInt(segment, 10) === value) return true;
+    }
+    return false;
+  }
+
+  const [minPart, hourPart, domPart, monPart, dowPart] = parts;
+
+  if (!matchField(minPart,  curMin,  0, 59)) return false;
+  if (!matchField(hourPart, curHour, 0, 23)) return false;
+  if (!matchField(monPart,  curMon,  1, 12)) return false;
+
+  // Vixie-cron DOM/DOW OR semantics
+  const domRestricted = domPart !== '*';
+  const dowRestricted = dowPart !== '*';
+  if (domRestricted && dowRestricted) {
+    return matchField(domPart, curDom, 1, 31) || matchField(dowPart, curDow, 0, 6);
+  }
+  return matchField(domPart, curDom, 1, 31) && matchField(dowPart, curDow, 0, 6);
 }

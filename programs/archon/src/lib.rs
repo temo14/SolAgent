@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-declare_id!("BfKWwCkP8fmvDsWznQXwW5PuvpateF9Nv6X4JMWTVFev");
+declare_id!("DaHkJdyABu8qfVXbxMmzSuNh59V3iZaQvD5niMcC3ak5");
 
 #[program]
 pub mod archon {

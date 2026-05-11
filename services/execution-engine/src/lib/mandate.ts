@@ -7,7 +7,7 @@ import {
 import { getConnection } from './rpc.js';
 
 export const MANDATE_PROGRAM_ID = new PublicKey(
-  'BfKWwCkP8fmvDsWznQXwW5PuvpateF9Nv6X4JMWTVFev',
+  process.env.MANDATE_PROGRAM_ID ?? 'BfKWwCkP8fmvDsWznQXwW5PuvpateF9Nv6X4JMWTVFev',
 );
 
 // Anchor discriminator = sha256("global:record_execution")[0..8]
@@ -31,18 +31,27 @@ export function deriveMandatePda(ownerPubkey: PublicKey): PublicKey {
   return pda;
 }
 
+// Discriminated union — callers must handle rpc_error separately from not_found
+// so an RPC outage cannot silently bypass mandate limits.
+export type MandateCheckResult =
+  | { kind: 'active' }
+  | { kind: 'revoked' }
+  | { kind: 'not_found' }
+  | { kind: 'rpc_error'; error: Error };
+
 /**
- * Fetches the Mandate account and returns whether it exists and is active.
- * Returns null if the account does not exist.
+ * Fetches the Mandate account and returns a discriminated result.
+ * Distinguishes between "account missing" (not_found) and "RPC failure"
+ * (rpc_error) so callers can abort rather than silently bypassing limits.
  */
-export async function fetchMandateIsActive(mandatePda: PublicKey): Promise<boolean | null> {
+export async function fetchMandateStatus(mandatePda: PublicKey): Promise<MandateCheckResult> {
   try {
     const conn = getConnection();
     const info = await conn.getAccountInfo(mandatePda, 'confirmed');
-    if (!info || info.data.length < IS_ACTIVE_OFFSET + 1) return null;
-    return info.data[IS_ACTIVE_OFFSET] === 1;
-  } catch {
-    return null;
+    if (!info || info.data.length < IS_ACTIVE_OFFSET + 1) return { kind: 'not_found' };
+    return info.data[IS_ACTIVE_OFFSET] === 1 ? { kind: 'active' } : { kind: 'revoked' };
+  } catch (err) {
+    return { kind: 'rpc_error', error: err instanceof Error ? err : new Error(String(err)) };
   }
 }
 

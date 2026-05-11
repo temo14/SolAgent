@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { NETWORK_LABEL } from '../lib/network';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   PublicKey,
@@ -251,7 +252,7 @@ export function MandateView({ jwt, agentWalletId, onBack }: MandateViewProps) {
                 </div>
               </div>
               <a
-                href={`https://explorer.solana.com/address/${state.mandatePda}?cluster=devnet`}
+                href={`https://explorer.solana.com/address/${state.mandatePda}${NETWORK_LABEL === 'mainnet' ? '' : NETWORK_LABEL === 'localnet' ? '?cluster=custom&customUrl=http%3A%2F%2Flocalhost%3A8899' : '?cluster=devnet'}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-[10px] font-bold text-black/30 hover:text-brand-ink flex items-center gap-1 transition-colors"

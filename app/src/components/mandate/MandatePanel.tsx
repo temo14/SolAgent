@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   PublicKey,
@@ -12,10 +13,7 @@ import { Shield, ShieldCheck, Loader2, Settings } from 'lucide-react';
 import { api } from '../../lib/api';
 import { MANDATE_PROGRAM_ID, SYSTEM_PROGRAM_ID, anchorDisc, deriveMandatePda } from '../../lib/mandateUtils';
 
-/**
- * Borsh-encodes CreateMandateParams and prepends the Anchor discriminator.
- *   [disc(8)] [delegate Pubkey(32)] [max_per_tx u64 LE(8)] [max_per_day u64 LE(8)] [expires_at i64 LE(8)]
- */
+/** [disc(8)] [delegate(32)] [max_per_tx u64(8)] [max_per_day u64(8)] [expires_at i64(8)] */
 async function buildCreateMandateData(
   delegate: PublicKey,
   maxPerTxLamports: bigint,
@@ -27,7 +25,21 @@ async function buildCreateMandateData(
   delegate.toBuffer().copy(buf, 8);
   buf.writeBigUInt64LE(maxPerTxLamports, 40);
   buf.writeBigUInt64LE(maxPerDayLamports, 48);
-  buf.writeBigInt64LE(0n, 56); // expires_at = 0 (no expiry)
+  buf.writeBigInt64LE(0n, 56);
+  return buf;
+}
+
+/** [disc(8)] [max_per_tx u64(8)] [max_per_day u64(8)] [expires_at i64(8)] */
+async function buildUpdateMandateData(
+  maxPerTxLamports: bigint,
+  maxPerDayLamports: bigint,
+): Promise<Buffer> {
+  const disc = await anchorDisc('update_mandate');
+  const buf = Buffer.allocUnsafe(8 + 8 + 8 + 8);
+  Buffer.from(disc).copy(buf, 0);
+  buf.writeBigUInt64LE(maxPerTxLamports, 8);
+  buf.writeBigUInt64LE(maxPerDayLamports, 16);
+  buf.writeBigInt64LE(0n, 24);
   return buf;
 }
 
@@ -72,35 +84,83 @@ export function MandatePanel({
       const maxPerTx = BigInt(Math.floor(parseFloat(maxPerTxSol) * LAMPORTS_PER_SOL));
       const maxPerDay = BigInt(Math.floor(parseFloat(maxPerDaySol) * LAMPORTS_PER_SOL));
 
-      const data = await buildCreateMandateData(agentPk, maxPerTx, maxPerDay);
+      // If the PDA already exists on-chain (e.g. DB missed the last tx), use update_mandate.
+      const pdaInfo = await connection.getAccountInfo(pda);
+      const alreadyExists = pdaInfo !== null;
 
-      // Accounts: [mandate (init, mut, PDA), owner (mut, signer), system_program]
-      const ix = new TransactionInstruction({
-        programId: MANDATE_PROGRAM_ID,
-        keys: [
+      let data: Buffer;
+      let keys: { pubkey: PublicKey; isSigner: boolean; isWritable: boolean }[];
+
+      if (alreadyExists) {
+        data = await buildUpdateMandateData(maxPerTx, maxPerDay);
+        keys = [
+          { pubkey: pda, isSigner: false, isWritable: true },
+          { pubkey: ownerPk, isSigner: true, isWritable: false },
+        ];
+      } else {
+        data = await buildCreateMandateData(agentPk, maxPerTx, maxPerDay);
+        keys = [
           { pubkey: pda, isSigner: false, isWritable: true },
           { pubkey: ownerPk, isSigner: true, isWritable: true },
           { pubkey: SYSTEM_PROGRAM_ID, isSigner: false, isWritable: false },
-        ],
-        data,
-      });
+        ];
+      }
 
-      const { blockhash } = await connection.getLatestBlockhash('confirmed');
-      const msg = new TransactionMessage({
+      // Simulate first to get a readable error instead of "Unexpected error".
+      const { blockhash: simBlockhash, lastValidBlockHeight: simLvbh } =
+        await connection.getLatestBlockhash('confirmed');
+      const simIx = new TransactionInstruction({ programId: MANDATE_PROGRAM_ID, keys, data });
+      const simMsg = new TransactionMessage({
         payerKey: ownerPk,
-        recentBlockhash: blockhash,
-        instructions: [ix],
+        recentBlockhash: simBlockhash,
+        instructions: [simIx],
       }).compileToV0Message();
+      const simTx = new VersionedTransaction(simMsg);
+      const sim = await connection.simulateTransaction(simTx, {
+        commitment: 'confirmed',
+        sigVerify: false,
+        replaceRecentBlockhash: true,
+      });
+      if (sim.value.err) {
+        const err = sim.value.err;
+        if (err === 'AccountNotFound' || (typeof err === 'object' && 'AccountNotFound' in err)) {
+          throw new Error('Your wallet has no SOL. Airdrop some SOL to your connected wallet before setting limits.');
+        }
+        const logs = sim.value.logs?.filter(l => l.includes('Error') || l.includes('failed') || l.includes('Program')).join('\n')
+          || sim.value.logs?.at(-1)
+          || JSON.stringify(err);
+        throw new Error(`Simulation failed: ${logs}`);
+      }
 
-      const tx = new VersionedTransaction(msg);
-      const sig = await sendTransaction(tx, connection);
-      await connection.confirmTransaction(sig, 'confirmed');
+      // Retry up to 3 times if the blockhash expires before confirmation.
+      const MAX_ATTEMPTS = 3;
+      let lastErr: Error = new Error('Transaction failed');
+      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+        try {
+          const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
 
-      // Record the PDA in the backend so exec-worker can find it.
-      await api.patch(`/api/agent-wallets/${agentWalletId}/mandate`, { mandatePda: pda.toBase58() }, jwt);
+          const ix = new TransactionInstruction({ programId: MANDATE_PROGRAM_ID, keys, data });
+          const msg = new TransactionMessage({
+            payerKey: ownerPk,
+            recentBlockhash: blockhash,
+            instructions: [ix],
+          }).compileToV0Message();
 
-      onMandateCreated(pda.toBase58());
-      setIsOpen(false);
+          const tx = new VersionedTransaction(msg);
+          const sig = await sendTransaction(tx, connection, { maxRetries: 5, skipPreflight: true });
+          await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, 'confirmed');
+
+          await api.patch(`/api/agent-wallets/${agentWalletId}/mandate`, { mandatePda: pda.toBase58() }, jwt);
+          onMandateCreated(pda.toBase58());
+          setIsOpen(false);
+          return;
+        } catch (err) {
+          lastErr = err instanceof Error ? err : new Error(String(err));
+          // Only retry on blockhash expiry; surface all other errors immediately.
+          if (!lastErr.message.includes('block height exceeded')) throw lastErr;
+        }
+      }
+      throw lastErr;
     } catch (err) {
       setTxError(err instanceof Error ? err.message : 'Transaction failed');
     } finally {
@@ -148,9 +208,10 @@ export function MandatePanel({
       </p>
 
       {/* Create mandate modal */}
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div
+      {createPortal(
+        <AnimatePresence>
+          {isOpen && (
+            <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -230,8 +291,10 @@ export function MandatePanel({
               </div>
             </motion.div>
           </motion.div>
-        )}
-      </AnimatePresence>
+          )}
+        </AnimatePresence>,
+        document.body,
+      )}
     </div>
   );
 }

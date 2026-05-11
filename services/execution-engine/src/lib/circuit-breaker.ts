@@ -1,4 +1,5 @@
 import type { PrismaClient } from '@prisma/client';
+import { REDIS_CHANNEL } from '@archon/shared';
 
 /** How many consecutive FAILED logs in the window before we halt. */
 const FAILURE_THRESHOLD = 3;
@@ -25,7 +26,9 @@ export async function isCircuitBreakerTripped(
 }
 
 /**
- * Pauses the rule with PAUSED_CIRCUIT_BREAKER status and records an AuditEvent.
+ * Pauses the rule with PAUSED_CIRCUIT_BREAKER status, records an AuditEvent,
+ * and publishes a real-time notification so the UI and notification service
+ * can alert the user immediately.
  */
 export async function triggerCircuitBreaker(
   ruleId: string,
@@ -35,9 +38,7 @@ export async function triggerCircuitBreaker(
   await prisma.$transaction([
     prisma.rule.update({
       where: { id: ruleId },
-      data: {
-        status: 'PAUSED_CIRCUIT_BREAKER',
-      },
+      data: { status: 'PAUSED_CIRCUIT_BREAKER' },
     }),
     prisma.auditEvent.create({
       data: {
@@ -49,4 +50,14 @@ export async function triggerCircuitBreaker(
       },
     }),
   ]);
+
+  // Publish real-time event so SSE consumers and the notification service are
+  // notified immediately rather than relying on DB polling.
+  try {
+    const { getPublisher } = await import('./redis.js');
+    await getPublisher().publish(
+      REDIS_CHANNEL.CIRCUIT_BREAKER_TRIPPED,
+      JSON.stringify({ ruleId, walletPubkey, timestamp: new Date().toISOString() }),
+    );
+  } catch { /* non-fatal — audit event already persisted */ }
 }

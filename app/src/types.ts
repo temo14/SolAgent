@@ -13,8 +13,9 @@ export interface AutomationRule {
   status: 'active' | 'inactive' | 'circuit_breaker';
   lastRun: string;
   executions: number;
+  lastFailureReason?: string;
   limits?: {
-    maxSpendPerDay: number;
+    maxSpendPerExec: number;
     maxFiresDay: number;
   };
   logic: {
@@ -36,7 +37,7 @@ export interface AuditLogEntry {
     txHash: string;
     /** Full transaction signature (base58) — for explorer links */
     txSignatureFull?: string;
-    status: 'success' | 'failed' | 'retrying' | 'pending';
+    status: 'success' | 'failed' | 'retrying' | 'pending' | 'circuit_breaker';
     cancelableUntil?: string;
   };
   details: {

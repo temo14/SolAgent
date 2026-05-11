@@ -34,7 +34,7 @@ import { publishExecResult } from '../lib/redis.js';
 import { getExecQueue } from '../lib/queue.js';
 import {
   deriveMandatePda,
-  fetchMandateIsActive,
+  fetchMandateStatus,
   buildRecordExecutionInstruction,
 } from '../lib/mandate.js';
 import { deriveAgentKeypair } from '../lib/crypto.js';
@@ -225,60 +225,48 @@ async function processExecJob(job: Job<ExecJobPayload>, log: FastifyBaseLogger):
 
     // ── 9. Mandate gate ───────────────────────────────────────────────────────
     // If the agent wallet has a mandatePda recorded, the mandate check is REQUIRED.
-    // An RPC failure when a mandate exists aborts the execution — we never silently
-    // bypass limits the user set on-chain.
+    // An RPC error when a mandate exists aborts execution — we never silently
+    // bypass spending limits the user set on-chain.
     let mandateIx: TransactionInstruction | null = null;
     const hasMandateInDb = Boolean(agentWallet.mandatePda);
-    try {
+    {
       const { PublicKey: PK } = await import('@solana/web3.js');
       const ownerPubkey = new PK(agentWallet.ownerPubkey);
       const mandatePda = deriveMandatePda(ownerPubkey);
-      const isActive = await fetchMandateIsActive(mandatePda);
+      const mandateStatus = await fetchMandateStatus(mandatePda);
 
-      if (isActive === null && hasMandateInDb) {
-        // Account doesn't exist on-chain but DB says it should — abort.
-        await setStatus('CIRCUIT_BREAKER_HALT', { errorCode: 'MANDATE_NOT_FOUND' });
-        log.error({ ruleId }, 'Mandate PDA not found on-chain — execution halted');
-        return;
-      }
-
-      if (isActive === false) {
+      if (mandateStatus.kind === 'rpc_error') {
+        if (hasMandateInDb) {
+          await setStatus('CIRCUIT_BREAKER_HALT', { errorCode: 'MANDATE_CHECK_FAILED' });
+          log.error({ ruleId, err: mandateStatus.error }, 'Mandate RPC error with DB mandate — execution halted');
+          return;
+        }
+        log.warn({ ruleId, err: mandateStatus.error }, 'Mandate RPC error for non-mandate wallet — proceeding');
+      } else if (mandateStatus.kind === 'not_found') {
+        if (hasMandateInDb) {
+          await setStatus('CIRCUIT_BREAKER_HALT', { errorCode: 'MANDATE_NOT_FOUND' });
+          log.error({ ruleId }, 'Mandate PDA not found on-chain — execution halted');
+          return;
+        }
+        // Legacy wallet with no mandate — no restrictions apply.
+      } else if (mandateStatus.kind === 'revoked') {
         await setStatus('CIRCUIT_BREAKER_HALT', { errorCode: 'MANDATE_REVOKED' });
         log.warn({ ruleId }, 'Mandate is revoked — execution halted');
         return;
-      }
-
-      if (isActive === true) {
+      } else if (mandateStatus.kind === 'active') {
         let lamports = 0n;
         if (action.type === 'transfer') {
           lamports = BigInt(Math.floor(action.amount * 1_000_000_000));
         } else if (action.type === 'swap' && action.from_asset === 'SOL' && savedQuoteResponse) {
-          lamports = BigInt(
-            (savedQuoteResponse as { inAmount?: string }).inAmount ?? '0',
-          );
+          lamports = BigInt((savedQuoteResponse as { inAmount?: string }).inAmount ?? '0');
         } else if (action.type === 'swap' && action.to_asset === 'SOL' && savedQuoteResponse) {
-          lamports = BigInt(
-            (savedQuoteResponse as { outAmount?: string }).outAmount ?? '0',
-          );
+          lamports = BigInt((savedQuoteResponse as { outAmount?: string }).outAmount ?? '0');
         }
         if (lamports > 0n) {
-          mandateIx = buildRecordExecutionInstruction(
-            mandatePda,
-            agentKeypair.publicKey,
-            lamports,
-          );
+          mandateIx = buildRecordExecutionInstruction(mandatePda, agentKeypair.publicKey, lamports);
           log.info({ ruleId, lamports: lamports.toString() }, 'Mandate gate: record_execution prepended');
         }
       }
-    } catch (err) {
-      if (hasMandateInDb) {
-        // Mandate exists in DB — RPC failure means we cannot verify limits. Abort.
-        await setStatus('CIRCUIT_BREAKER_HALT', { errorCode: 'MANDATE_CHECK_FAILED' });
-        log.error({ ruleId, err }, 'Mandate check failed and mandate is required — execution halted');
-        return;
-      }
-      // No mandate in DB — legacy wallet, safe to proceed.
-      log.warn({ ruleId, err }, 'Mandate gate check failed for non-mandate wallet — proceeding');
     }
 
     // ── 10. Build transaction ────────────────────────────────────────────────
@@ -297,11 +285,16 @@ async function processExecJob(job: Job<ExecJobPayload>, log: FastifyBaseLogger):
     let altAddresses: string[] = [];
 
     if (action.type === 'swap' && action.from_asset && action.to_asset) {
-      if (!savedQuoteResponse) {
-        throw new Error('savedQuoteResponse missing — price check must have been skipped');
-      }
+      // Re-fetch a fresh quote at build time — the oracle-check quote (step 7)
+      // can be 30+ seconds old by the time we reach this step and may be rejected.
+      const freshQuoteResult = await getJupiterQuote(
+        action.from_asset,
+        action.to_asset,
+        action.amount,
+        action.max_slippage_bps,
+      );
       const swapIxs = await getJupiterSwapInstructions(
-        savedQuoteResponse,
+        freshQuoteResult.quoteResponse,
         agentKeypair.publicKey.toBase58(),
       );
       mainInstructions = swapIxs.instructions;
@@ -341,6 +334,17 @@ async function processExecJob(job: Job<ExecJobPayload>, log: FastifyBaseLogger):
       lookupTables,
     );
     tx.sign([agentKeypair]);
+
+    // ── 10.5 Pre-send balance re-check ──────────────────────────────────────
+    // Re-verify balance immediately before broadcast — it could have changed
+    // during the mandate / quote / build steps above.
+    const solBalancePreSend = await getSolBalance(agentKeypairPubkey);
+    if (solBalancePreSend < MINIMUM_SOL_RESERVE) {
+      await setStatus('INSUFFICIENT_FUNDS', { errorCode: 'EXEC_INSUFFICIENT_FUNDS' });
+      await emitResult({ ruleId, walletPubkey, idempotencyKey, status: 'INSUFFICIENT_FUNDS', errorCode: 'EXEC_INSUFFICIENT_FUNDS' });
+      log.warn({ ruleId, agentKeypairPubkey, solBalancePreSend }, 'Insufficient funds detected pre-send — aborting');
+      return;
+    }
 
     // ── 11. Send and wait ────────────────────────────────────────────────────
     log.info({ ruleId, agentKeypairPubkey }, 'Sending transaction');

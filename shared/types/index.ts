@@ -59,6 +59,9 @@ export const ERROR_CODES = {
   CIRCUIT_RULE_BREAKER: 'CIRCUIT_RULE_BREAKER',
   RPC_UNAVAILABLE: 'RPC_UNAVAILABLE',
   WEBHOOK_HMAC_FAIL: 'WEBHOOK_HMAC_FAIL',
+  MANDATE_NOT_FOUND: 'MANDATE_NOT_FOUND',
+  MANDATE_REVOKED: 'MANDATE_REVOKED',
+  MANDATE_CHECK_FAILED: 'MANDATE_CHECK_FAILED',
 } as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
@@ -74,24 +77,17 @@ export const TriggerSchema = z.object({
     'time_cron',
     'outflow_exceeded',
   ]),
-  asset: z.string().min(2).max(50),
+  asset: z.string().min(1).max(50),
   threshold: z.number(),
   cron_expression: z.string().optional(),
   window_seconds: z.number().optional(),
-  /**
-   * UTC hour (0–23) at which a time_cron rule stops firing.
-   * Evaluated as: do not fire if utcHour >= until_utc_hour.
-   * Use when user explicitly mentions UTC/Zulu.
-   */
   until_utc_hour: z.number().int().min(0).max(23).optional(),
-  /**
-   * Local wall-clock hour (0–23) in `schedule_timezone` when firing stops for time_cron.
-   * Prefer this for "until 4 PM" without saying UTC — matches the user's timezone.
-   */
   until_local_hour: z.number().int().min(0).max(23).optional(),
-  /** IANA zone (e.g. Asia/Tbilisi) — set server-side from the client when creating the rule */
   schedule_timezone: z.string().min(2).max(80).optional(),
-});
+}).refine(
+  (t) => !(t.until_utc_hour !== undefined && t.until_local_hour !== undefined),
+  { message: 'Set either until_utc_hour or until_local_hour, not both' },
+);
 
 export const ActionSchema = z.object({
   type: z.enum(['swap', 'transfer', 'alert_only', 'pause_all']),
@@ -100,11 +96,17 @@ export const ActionSchema = z.object({
   amount: z.number(),
   recipient: z.string().optional(),
   max_slippage_bps: z.number().default(DEFAULT_MAX_SLIPPAGE_BPS),
-});
+}).refine(
+  (a) => a.type !== 'transfer' || (typeof a.recipient === 'string' && a.recipient.length > 0),
+  { message: 'transfer action requires a recipient address' },
+).refine(
+  (a) => a.type !== 'swap' || (a.from_asset && a.to_asset),
+  { message: 'swap action requires from_asset and to_asset' },
+);
 
 export const ConditionsSchema = z.object({
-  max_amount_usd: z.number(),
-  max_fires_per_day: z.number().default(10),
+  max_amount_usd: z.number().positive(),
+  max_fires_per_day: z.number().int().min(1).max(1440).default(10),
 });
 
 export const ArchonRuleSchema = z.object({

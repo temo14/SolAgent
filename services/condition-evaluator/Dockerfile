@@ -9,7 +9,8 @@ COPY shared/prisma ./shared/prisma
 COPY services/condition-evaluator/package.json ./services/condition-evaluator/
 
 RUN apk add --no-cache openssl libc6-compat
-RUN npm install --legacy-peer-deps
+ENV PRISMA_SKIP_POSTINSTALL_GENERATE=1
+RUN npm install --legacy-peer-deps --fetch-retries=5 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000
 
 # ── Source + build ────────────────────────────────────────────────────────────
 COPY shared ./shared
@@ -17,8 +18,8 @@ COPY services/condition-evaluator ./services/condition-evaluator
 
 RUN npx prisma generate --schema=shared/prisma/schema.prisma
 
-RUN npm run build -w @solagent/shared
-RUN npm run build -w @solagent/condition-evaluator
+RUN npm run build -w @archon/shared
+RUN npm run build -w @archon/condition-evaluator
 
 # ── Production image ──────────────────────────────────────────────────────────
 FROM node:22-alpine AS runner

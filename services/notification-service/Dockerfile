@@ -7,14 +7,15 @@ COPY shared/prisma ./shared/prisma
 COPY services/notification-service/package.json ./services/notification-service/
 
 RUN apk add --no-cache openssl libc6-compat
-RUN npm install --legacy-peer-deps
+ENV PRISMA_SKIP_POSTINSTALL_GENERATE=1
+RUN npm install --legacy-peer-deps --fetch-retries=5 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000
 
 COPY shared ./shared
 COPY services/notification-service ./services/notification-service
 
 RUN npx prisma generate --schema=shared/prisma/schema.prisma
-RUN npm run build -w @solagent/shared
-RUN npm run build -w @solagent/notification-service
+RUN npm run build -w @archon/shared
+RUN npm run build -w @archon/notification-service
 
 FROM node:22-alpine AS runner
 ENV NODE_ENV=production

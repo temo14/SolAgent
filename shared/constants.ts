@@ -84,4 +84,5 @@ export const REDIS_CHANNEL = {
   WEBHOOK_EVENTS: 'archon:webhook:events',
   RULE_ACTIVATED: 'archon:rule:activated',
   EXEC_RESULT: 'archon:exec:result',
+  CIRCUIT_BREAKER_TRIPPED: 'archon:circuit-breaker:tripped',
 } as const;

@@ -44,7 +44,9 @@ function mapAuditEvent(ev: BackendAuditEvent): AuditLogEntry {
 
   const actionLabel = act
     ? `${act.type}: ${act.amount} ${act.from ?? ''} ${act.to ? `→ ${act.to}` : ''}`.trim()
-    : ev.eventType.replace(/_/g, ' ').toLowerCase();
+    : ev.eventType === 'CIRCUIT_BREAKER_HALT'
+      ? 'Rule auto-paused after 3 consecutive failures'
+      : ev.eventType.replace(/_/g, ' ').toLowerCase();
 
   return {
     id: ev.id,
@@ -58,19 +60,35 @@ function mapAuditEvent(ev: BackendAuditEvent): AuditLogEntry {
     }),
     ruleName: ev.ruleId ? `Rule ${ev.ruleId.slice(0, 8)}` : 'System Event',
     trigger: {
-      condition: trig ? `${trig.type.replace(/_/g, ' ')}: ${trig.asset}` : 'Unknown',
-      observedValue: trig ? String(trig.observed) : '–',
+      condition: trig
+        ? trig.type === 'time_cron'
+          ? `Every minute · ${trig.asset}`
+          : `${trig.type.replace(/_/g, ' ')}: ${trig.asset}`
+        : 'Unknown',
+      observedValue: trig
+        ? trig.type === 'time_cron'
+          ? new Date(trig.observed * 1000).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+          : String(trig.observed)
+        : '–',
     },
     action: {
-      label: actionLabel,
+      label: act
+        ? act.type === 'transfer'
+          ? `Sent ${act.amount} ${act.from ?? 'SOL'} → ${act.to ? `${act.to.slice(0, 6)}…${act.to.slice(-4)}` : 'recipient'}`
+          : act.type === 'swap'
+            ? `Swapped ${act.amount} ${act.from ?? ''} → ${act.to ?? ''}`
+            : actionLabel
+        : actionLabel,
       txHash: shortSig,
       txSignatureFull: sig,
       status:
         ev.eventType === 'EXECUTION_CONFIRMED'
           ? 'success'
           : ev.eventType === 'CIRCUIT_BREAKER_HALT'
-            ? 'failed'
-            : 'pending',
+            ? 'circuit_breaker'
+            : ev.eventType === 'EXECUTION_FAILED'
+              ? 'failed'
+              : 'pending',
     },
     details: {
       gasUsed: '–',

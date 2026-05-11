@@ -153,7 +153,7 @@ export function MarketplaceView({ jwt, onUseTemplate }: MarketplaceViewProps) {
               </div>
 
               {/* Description */}
-              <h3 className="text-base font-black tracking-tight mb-3 leading-snug flex-1">
+              <h3 className="text-base font-black tracking-tight mb-3 leading-snug flex-1 break-all">
                 {template.description}
               </h3>
 

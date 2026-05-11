@@ -6,10 +6,10 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-archon = "BfKWwCkP8fmvDsWznQXwW5PuvpateF9Nv6X4JMWTVFev"
+archon = "DaHkJdyABu8qfVXbxMmzSuNh59V3iZaQvD5niMcC3ak5"
 
-[registry]
-url = "https://api.apr.dev"
+[programs.devnet]
+archon = "BfKWwCkP8fmvDsWznQXwW5PuvpateF9Nv6X4JMWTVFev"
 
 [provider]
 cluster = "localnet"
@@ -17,3 +17,5 @@ wallet = "~/.config/solana/id.json"
 
 [scripts]
 test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 \"tests/**/*.ts\""
+
+[hooks]

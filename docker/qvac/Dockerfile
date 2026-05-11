@@ -22,7 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # @qvac/sdk imports bare-* packages even in Node.js mode — they are required
 # peer deps, not Bare-runtime-only. See package.json for the exact set.
 COPY docker/qvac/package.json ./
-RUN npm install --omit=dev --legacy-peer-deps
+RUN npm install --omit=dev --legacy-peer-deps --fetch-retries=5 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000
 
 # Config declares which model aliases the HTTP server can load.
 # Alias "archon-parser" must match QVAC_MODEL in .env.devnet

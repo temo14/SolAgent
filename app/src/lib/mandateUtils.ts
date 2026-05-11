@@ -1,6 +1,8 @@
 import { PublicKey } from '@solana/web3.js';
 
-export const MANDATE_PROGRAM_ID = new PublicKey('BfKWwCkP8fmvDsWznQXwW5PuvpateF9Nv6X4JMWTVFev');
+export const MANDATE_PROGRAM_ID = new PublicKey(
+  (import.meta.env.VITE_MANDATE_PROGRAM_ID as string | undefined) ?? 'BfKWwCkP8fmvDsWznQXwW5PuvpateF9Nv6X4JMWTVFev',
+);
 export const SYSTEM_PROGRAM_ID  = new PublicKey('11111111111111111111111111111111');
 
 export async function anchorDisc(name: string): Promise<Uint8Array> {

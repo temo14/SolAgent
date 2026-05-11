@@ -2,6 +2,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Fingerprint, ExternalLink, Layers, Cpu, CheckCircle2, XCircle, RotateCcw, Clock, AlertTriangle } from 'lucide-react';
 import { AuditLogEntry } from '../../types';
 import { useState, useEffect } from 'react';
+import { NETWORK_LABEL } from '../../lib/network';
 
 interface AuditCardProps {
   key?: string;
@@ -10,10 +11,13 @@ interface AuditCardProps {
   onToggle: () => void;
 }
 
-const CLUSTER = import.meta.env.MODE === 'mainnet' ? '' : '?cluster=devnet';
+const CLUSTER =
+  NETWORK_LABEL === 'mainnet' ? '' :
+  NETWORK_LABEL === 'localnet' ? '?cluster=custom&customUrl=http%3A%2F%2Flocalhost%3A8899' :
+  '?cluster=devnet';
 
 function explorerUrl(sig: string): string {
-  return `https://solscan.io/tx/${sig}${CLUSTER}`;
+  return `https://explorer.solana.com/tx/${sig}${CLUSTER}`;
 }
 
 export const AuditCard = ({ entry, isExpanded, onToggle }: AuditCardProps) => {
@@ -40,6 +44,7 @@ export const AuditCard = ({ entry, isExpanded, onToggle }: AuditCardProps) => {
     switch (status) {
       case 'success': return 'text-brand-safe';
       case 'failed': return 'text-brand-stop';
+      case 'circuit_breaker': return 'text-amber-500';
       case 'retrying': return 'text-brand-wait';
       case 'pending': return 'text-blue-500';
       default: return 'text-white/40';
@@ -50,15 +55,21 @@ export const AuditCard = ({ entry, isExpanded, onToggle }: AuditCardProps) => {
     switch (status) {
       case 'success': return <CheckCircle2 size={16} />;
       case 'failed': return <XCircle size={16} />;
+      case 'circuit_breaker': return <AlertTriangle size={16} />;
       case 'retrying': return <RotateCcw size={16} className="animate-spin" />;
       case 'pending': return <Clock size={16} className="animate-pulse" />;
       default: return null;
     }
   };
 
+  const getStatusLabel = (status: string) => {
+    if (status === 'circuit_breaker') return 'Rule paused';
+    return status;
+  };
+
   return (
     <div className="relative">
-      <div className={`absolute -left-[35px] md:-left-[64px] top-2 w-[47px] h-[47px] rounded-full border-4 border-[#F8F9FA] flex items-center justify-center z-10 shadow-lg shadow-black/10 transition-transform hover:scale-110 ${entry.action.status === 'failed' ? 'bg-brand-stop text-white' : entry.action.status === 'pending' ? 'bg-blue-500 text-white' : 'bg-brand-ink text-white'}`}>
+      <div className={`absolute -left-[35px] md:-left-[64px] top-2 w-[47px] h-[47px] rounded-full border-4 border-[#F8F9FA] flex items-center justify-center z-10 shadow-lg shadow-black/10 transition-transform hover:scale-110 ${entry.action.status === 'failed' ? 'bg-brand-stop text-white' : entry.action.status === 'circuit_breaker' ? 'bg-amber-400 text-white' : entry.action.status === 'pending' ? 'bg-blue-500 text-white' : 'bg-brand-ink text-white'}`}>
         <Fingerprint size={20} />
       </div>
 
@@ -69,9 +80,9 @@ export const AuditCard = ({ entry, isExpanded, onToggle }: AuditCardProps) => {
             <h3 className="text-2xl font-bold mt-1">{entry.ruleName}</h3>
           </div>
           <div className="flex items-center gap-3">
-            <div className={`px-4 py-2 rounded-full border flex items-center gap-2 text-[10px] font-black uppercase tracking-widest ${getStatusColor(entry.action.status)} ${entry.action.status === 'failed' ? 'bg-brand-stop/5 border-brand-stop/10' : 'bg-black/5 border-black/5'}`}>
+            <div className={`px-4 py-2 rounded-full border flex items-center gap-2 text-[10px] font-black uppercase tracking-widest ${getStatusColor(entry.action.status)} ${entry.action.status === 'failed' ? 'bg-brand-stop/5 border-brand-stop/10' : entry.action.status === 'circuit_breaker' ? 'bg-amber-50 border-amber-200' : 'bg-black/5 border-black/5'}`}>
               {getStatusIcon(entry.action.status)}
-              {entry.action.status}
+              {getStatusLabel(entry.action.status)}
             </div>
             <button
               onClick={onToggle}
@@ -97,10 +108,15 @@ export const AuditCard = ({ entry, isExpanded, onToggle }: AuditCardProps) => {
             </div>
           </div>
 
-          <div className={`p-8 rounded-[32px] text-white shadow-2xl relative overflow-hidden ${entry.action.status === 'success' ? 'bg-brand-ink' : entry.action.status === 'pending' ? 'bg-blue-600' : entry.action.status === 'retrying' ? 'bg-brand-wait' : 'bg-brand-stop'}`}>
-            <div className="text-[10px] font-bold text-white/30 uppercase tracking-widest mb-4">Result</div>
+          <div className={`p-8 rounded-[32px] shadow-2xl relative overflow-hidden ${entry.action.status === 'success' ? 'bg-brand-ink text-white' : entry.action.status === 'pending' ? 'bg-blue-600 text-white' : entry.action.status === 'retrying' ? 'bg-brand-wait text-white' : entry.action.status === 'circuit_breaker' ? 'bg-amber-50 text-amber-900 border border-amber-200' : 'bg-brand-stop text-white'}`}>
+            <div className={`text-[10px] font-bold uppercase tracking-widest mb-4 ${entry.action.status === 'circuit_breaker' ? 'text-amber-500' : 'text-white/30'}`}>Result</div>
             <div className="space-y-1">
               <div className="text-2xl font-bold leading-tight mb-2">{entry.action.label}</div>
+              {entry.action.status === 'circuit_breaker' && (
+                <div className="mt-3 text-[11px] font-medium text-amber-700 leading-relaxed">
+                  The rule failed 3 times in a row so it was automatically paused to protect your funds. Go to <span className="font-black">My Rules</span> and click <span className="font-black">Reactivate</span> once you've checked the issue.
+                </div>
+              )}
               {entry.action.status === 'failed' && (
                 <div className="mt-4 flex items-center gap-2 text-white text-[10px] font-extrabold uppercase tracking-widest">
                   <AlertTriangle size={14} /> Execution failed

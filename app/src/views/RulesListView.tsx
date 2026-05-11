@@ -10,9 +10,10 @@ interface RulesListViewProps {
   isLoading?: boolean;
   onAddRule: () => void;
   onDeleteRule: (id: string) => void;
+  onReactivateRule: (id: string) => void;
 }
 
-export const RulesListView = ({ rules, isLoading, onAddRule, onDeleteRule }: RulesListViewProps) => (
+export const RulesListView = ({ rules, isLoading, onAddRule, onDeleteRule, onReactivateRule }: RulesListViewProps) => (
   <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} className="space-y-12">
     <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
       <div>
@@ -44,7 +45,7 @@ export const RulesListView = ({ rules, isLoading, onAddRule, onDeleteRule }: Rul
     ) : (
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-8">
         {rules.map((rule) => (
-          <RuleCard key={rule.id} rule={rule} onDelete={onDeleteRule} />
+          <RuleCard key={rule.id} rule={rule} onDelete={onDeleteRule} onReactivate={onReactivateRule} />
         ))}
       </div>
     )}

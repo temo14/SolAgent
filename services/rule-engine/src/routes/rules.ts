@@ -1,9 +1,9 @@
 import { createHash } from 'crypto';
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
-import { ERROR_CODES, REDIS_CHANNEL, isValidIanaTimeZone } from '@archon/shared';
+import { ERROR_CODES, REDIS_CHANNEL, isValidIanaTimeZone, ArchonRuleSchema } from '@archon/shared';
 import { getPrisma } from '../lib/prisma.js';
-import { parseRuleWithQvac, QvacError } from '../lib/qvac.js';
+import { parseRule, QvacError } from '../lib/parser.js';
 import { simulateRule } from '../lib/simulate.js';
 import { registerHeliusWebhook } from '../lib/helius.js';
 import type { JwtPayload } from '../types.js';
@@ -21,6 +21,8 @@ const CreateRuleBodySchema = z.object({
   maxFiresPerDay: z.number().int().min(1).max(1440).optional(),
   /** Browser IANA TZ e.g. Asia/Dubai — used for until_local_hour on time_cron */
   clientTimezone: z.string().min(2).max(80).optional(),
+  /** Pre-parsed rule from /parse — skips the second QVAC call on confirm */
+  parsedRule: ArchonRuleSchema.optional(),
 });
 
 const PatchStatusBodySchema = z.object({
@@ -79,7 +81,7 @@ export async function ruleRoutes(server: FastifyInstance): Promise<void> {
 
       let parsedRule;
       try {
-        parsedRule = await parseRuleWithQvac(bodyParse.data.rawInput);
+        parsedRule = await parseRule(bodyParse.data.rawInput);
       } catch (err) {
         if (err instanceof QvacError) {
           const status = err.errorCode === ERROR_CODES.QVAC_UNAVAILABLE ? 503 : 422;
@@ -119,7 +121,7 @@ export async function ruleRoutes(server: FastifyInstance): Promise<void> {
       // 1. Parse rule via QVAC
       let parsedRule;
       try {
-        parsedRule = await parseRuleWithQvac(rawInput);
+        parsedRule = await parseRule(rawInput);
       } catch (err) {
         if (err instanceof QvacError) {
           const status = err.errorCode === ERROR_CODES.QVAC_UNAVAILABLE ? 503 : 422;
@@ -177,7 +179,7 @@ export async function ruleRoutes(server: FastifyInstance): Promise<void> {
         });
       }
 
-      const { agentWalletId, rawInput, maxAmountUsd, maxFiresPerDay, clientTimezone } =
+      const { agentWalletId, rawInput, maxAmountUsd, maxFiresPerDay, clientTimezone, parsedRule: prebuiltRule } =
         bodyParse.data;
 
       // Verify the agent wallet belongs to this user
@@ -198,21 +200,25 @@ export async function ruleRoutes(server: FastifyInstance): Promise<void> {
         });
       }
 
-      // Parse via QVAC (mandatory — returns 503 on unavailability)
+      // Use pre-parsed rule from frontend if provided (avoids double QVAC call)
       let parsedRule;
-      try {
-        parsedRule = await parseRuleWithQvac(rawInput);
-      } catch (err) {
-        if (err instanceof QvacError) {
-          const status =
-            err.errorCode === ERROR_CODES.QVAC_UNAVAILABLE ? 503 : 422;
-          return reply.status(status).send({
-            ok: false,
-            errorCode: err.errorCode,
-            message: err.message,
-          });
+      if (prebuiltRule !== undefined) {
+        parsedRule = prebuiltRule;
+      } else {
+        try {
+          parsedRule = await parseRule(rawInput);
+        } catch (err) {
+          if (err instanceof QvacError) {
+            const status =
+              err.errorCode === ERROR_CODES.QVAC_UNAVAILABLE ? 503 : 422;
+            return reply.status(status).send({
+              ok: false,
+              errorCode: err.errorCode,
+              message: err.message,
+            });
+          }
+          throw err;
         }
-        throw err;
       }
 
       const tzFromBrowser = clientTimezone?.trim();
@@ -291,7 +297,7 @@ export async function ruleRoutes(server: FastifyInstance): Promise<void> {
 
       const [rules, total] = await prisma.$transaction([
         prisma.rule.findMany({
-          where: { userId, ...(status !== undefined ? { status } : {}) },
+          where: { userId, ...(status !== undefined ? { status } : { status: { not: 'ARCHIVED' } }) },
           select: {
             id: true,
             rawInput: true,
@@ -307,12 +313,18 @@ export async function ruleRoutes(server: FastifyInstance): Promise<void> {
             pauseReason: true,
             agentWallet: { select: { delegatePubkey: true, id: true } },
             _count: { select: { executions: true } },
+            executions: {
+              where: { status: 'FAILED' },
+              orderBy: { createdAt: 'desc' },
+              take: 1,
+              select: { errorCode: true, errorDetail: true },
+            },
           },
           orderBy: { createdAt: 'desc' },
           skip,
           take: limit,
         }),
-        prisma.rule.count({ where: { userId, ...(status !== undefined ? { status } : {}) } }),
+        prisma.rule.count({ where: { userId, ...(status !== undefined ? { status } : { status: { not: 'ARCHIVED' } }) } }),
       ]);
 
       return reply.send({
@@ -436,17 +448,66 @@ export async function ruleRoutes(server: FastifyInstance): Promise<void> {
             request.log.warn({ err, ruleId: id }, 'Failed to publish rule-activated event'),
           );
 
-        // Register the agent keypair (delegatePubkey) with Helius so balance-change
-        // events reach the condition evaluator.  Idempotent — safe to call repeatedly.
-        registerHeliusWebhook(delegatePubkey).catch((err: unknown) =>
-          request.log.warn(
+        // Await Helius webhook registration so we can surface failures to the caller.
+        // For time_cron rules this is non-fatal (polling covers them); for balance/price
+        // rules a failed registration means events arrive on the 5-min polling path only.
+        let webhookWarning: string | undefined;
+        try {
+          await registerHeliusWebhook(delegatePubkey);
+        } catch (err: unknown) {
+          webhookWarning =
+            'Helius webhook registration failed — balance/price event latency may be up to 5 minutes. Retry activation to re-register.';
+          request.log.error(
             { err, delegatePubkey, ruleId: id },
-            'Helius webhook registration failed — manual registration may be needed',
-          ),
-        );
+            'Helius webhook registration failed on rule activation',
+          );
+        }
+
+        request.log.info({ ruleId: id, userId, status }, 'Rule status updated');
+        return reply.send({ ok: true, data: updated, ...(webhookWarning ? { webhookWarning } : {}) });
       }
 
       request.log.info({ ruleId: id, userId, status }, 'Rule status updated');
+      return reply.send({ ok: true, data: updated });
+    },
+  );
+
+  /**
+   * POST /rules/:id/circuit-breaker/reset
+   * Clears a PAUSED_CIRCUIT_BREAKER state → PAUSED so the user can investigate
+   * failures and then re-activate via PATCH /rules/:id/status.
+   * Does NOT re-activate automatically — requires a conscious ACTIVE transition.
+   */
+  server.post(
+    '/:id/circuit-breaker/reset',
+    { onRequest: [server.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { userId } = request.user as JwtPayload;
+      const { id } = request.params as { id: string };
+      const prisma = getPrisma();
+
+      const rule = await prisma.rule.findFirst({ where: { id, userId } });
+      if (rule === null) {
+        return reply.status(404).send({ ok: false, message: 'Rule not found' });
+      }
+      if (rule.status !== 'PAUSED_CIRCUIT_BREAKER') {
+        return reply.status(409).send({
+          ok: false,
+          message: `Rule is not in PAUSED_CIRCUIT_BREAKER state (current: ${rule.status})`,
+        });
+      }
+
+      const updated = await prisma.rule.update({
+        where: { id },
+        data: {
+          status: 'PAUSED',
+          pauseReason: 'circuit_breaker_manually_reset',
+          pausedAt: new Date(),
+        },
+        select: { id: true, status: true, pauseReason: true, pausedAt: true },
+      });
+
+      request.log.info({ ruleId: id, userId }, 'Circuit breaker manually reset to PAUSED');
       return reply.send({ ok: true, data: updated });
     },
   );
