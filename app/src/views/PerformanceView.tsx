@@ -1,5 +1,10 @@
 import { useState, useEffect } from 'react';
 import { NETWORK_LABEL } from '../lib/network';
+
+const CLUSTER =
+  NETWORK_LABEL === 'mainnet' ? '' :
+  NETWORK_LABEL === 'localnet' ? '?cluster=custom&customUrl=http%3A%2F%2Flocalhost%3A8899' :
+  '?cluster=devnet';
 import { motion } from 'motion/react';
 import {
   TrendingUp,
@@ -96,8 +101,6 @@ export function PerformanceView({ jwt, agentWalletId, onNavigateToMandate }: Per
       .catch(() => undefined)
       .finally(() => setIsLoading(false));
   }, [jwt, agentWalletId]);
-
-  const network = NETWORK_LABEL;
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
@@ -277,7 +280,7 @@ export function PerformanceView({ jwt, agentWalletId, onNavigateToMandate }: Per
                 </div>
                 {ex.txSignature && (
                   <a
-                    href={`https://explorer.solana.com/tx/${ex.txSignature}?cluster=${network}`}
+                    href={`https://explorer.solana.com/tx/${ex.txSignature}${CLUSTER}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-1 text-[10px] font-bold text-black/30 hover:text-brand-ink transition-colors shrink-0 ml-4"
