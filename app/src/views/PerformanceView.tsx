@@ -270,7 +270,7 @@ export function PerformanceView({ jwt, agentWalletId, onNavigateToMandate }: Per
             {stats.recentExecs.map((ex) => (
               <div key={ex.id} className="px-8 py-5 flex items-center justify-between hover:bg-black/[0.01] transition-colors">
                 <div>
-                  <p className="text-sm font-bold text-black/80">{ex.ruleLabel}{ex.ruleLabel.length >= 60 ? '…' : ''}</p>
+                  <p className="text-sm font-bold text-black/80">{ex.ruleLabel.length > 60 ? `${ex.ruleLabel.slice(0, 60)}…` : ex.ruleLabel}</p>
                   <p className="text-xs text-black/30 font-medium mt-0.5">
                     {ex.confirmedAt
                       ? new Date(ex.confirmedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })

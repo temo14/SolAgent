@@ -25,7 +25,7 @@ const FEATURES = [
   {
     icon: Zap,
     title: 'Natural Language Rules',
-    body: 'Describe what you want in plain English — "buy SOL when price drops below $120." QVAC translates it into structured on-chain logic instantly.',
+    body: 'Describe what you want in plain English — "buy SOL when price drops below $120." Claude AI translates it into structured on-chain logic instantly.',
     accent: 'bg-brand-wait/10 text-brand-wait',
   },
   {
