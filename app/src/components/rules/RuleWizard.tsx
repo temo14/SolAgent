@@ -409,7 +409,7 @@ export const RuleWizard = ({
                 className="w-full h-56 bg-white border border-black/10 rounded-[44px] p-10 text-2xl leading-relaxed focus:ring-8 focus:ring-black/5 focus:outline-none transition-all resize-none shadow-sm group-hover:border-black/20"
               />
               <div className="absolute bottom-10 right-10 flex items-center gap-2 text-brand-safe text-[10px] font-bold uppercase tracking-widest bg-brand-safe/5 px-3 py-1 rounded-full">
-                <Sparkles size={12} /> QVAC Powered
+                <Sparkles size={12} /> AI Powered
               </div>
             </div>
 
@@ -434,7 +434,7 @@ export const RuleWizard = ({
               ) : (
                 <Zap size={24} />
               )}
-              {isParsing ? 'Analysing with QVAC…' : 'Parse & Preview Rule'}
+              {isParsing ? 'Analysing…' : 'Parse & Preview Rule'}
             </button>
           </motion.div>
         )}
