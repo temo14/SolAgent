@@ -22,7 +22,11 @@ export function scheduleDailyFiresReset(log: FastifyBaseLogger): cron.ScheduledT
           },
           data: { firesToday: 0 },
         });
-        log.info({ resetCount: count }, 'Daily firesToday reset complete');
+        const { count: reactivated } = await prisma.rule.updateMany({
+          where: { pauseReason: 'daily_limit_reached' },
+          data: { status: 'ACTIVE', pausedAt: null, pauseReason: null },
+        });
+        log.info({ resetCount: count, reactivated }, 'Daily firesToday reset complete');
       } catch (err) {
         log.error({ err }, 'Daily firesToday reset failed');
       }

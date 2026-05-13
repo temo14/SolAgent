@@ -127,7 +127,11 @@ async function processExecJob(job: Job<ExecJobPayload>, log: FastifyBaseLogger):
     const maxFires = parsedRule.conditions.max_fires_per_day ?? DEFAULT_MAX_FIRES_PER_DAY;
     if ((rule.firesToday ?? 0) >= maxFires) {
       await setStatus('STALE_CONDITION', { errorDetail: 'max_fires_per_day exceeded' });
-      log.info({ ruleId, firesToday: rule.firesToday, maxFires }, 'Daily fire limit reached');
+      await prisma.rule.update({
+        where: { id: ruleId },
+        data: { status: 'PAUSED', pausedAt: new Date(), pauseReason: 'daily_limit_reached' },
+      }).catch(() => undefined);
+      log.info({ ruleId, firesToday: rule.firesToday, maxFires }, 'Daily fire limit reached — rule auto-paused');
       return;
     }
 

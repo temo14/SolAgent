@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from 'crypto';
+import { timingSafeEqual } from 'crypto';
 import { ERROR_CODES } from '@archon/shared';
 
 /**
@@ -27,12 +27,10 @@ export function validateHeliusHmac(
     ? authHeader.slice(7).trim()
     : authHeader.trim();
 
-  const expected = createHmac('sha256', secret).update(rawBody).digest('hex');
+  // Helius sends the raw secret directly in the Authorization header (not an HMAC).
+  if (secret.length !== received.length) return false;
 
-  // Lengths must match before timingSafeEqual (it throws on length mismatch)
-  if (expected.length !== received.length) return false;
-
-  return timingSafeEqual(Buffer.from(expected, 'utf8'), Buffer.from(received, 'utf8'));
+  return timingSafeEqual(Buffer.from(secret, 'utf8'), Buffer.from(received, 'utf8'));
 }
 
 export { ERROR_CODES };
