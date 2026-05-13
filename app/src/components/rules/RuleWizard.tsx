@@ -348,7 +348,7 @@ export const RuleWizard = ({
                 Describe Your Rule
               </h1>
               <p className="text-black/40 text-xl font-medium mt-2">
-                Tell Aura what to watch for and what action to take.
+                Tell Archon what to watch for and what action to take.
               </p>
             </div>
 
@@ -451,7 +451,7 @@ export const RuleWizard = ({
             <div>
               <h1 className="text-5xl font-semibold tracking-tight">Is this what you meant?</h1>
               <p className="text-black/40 text-lg font-medium mt-2">
-                Review what Aura understood.
+                Review what Archon understood.
               </p>
             </div>
 
@@ -545,7 +545,7 @@ export const RuleWizard = ({
             </div>
             <h1 className="text-4xl font-bold tracking-tight">Ready to Deploy</h1>
             <p className="text-black/40 text-lg">
-              Aura will start monitoring this condition immediately. You can pause or delete at any
+              Archon will start monitoring this condition immediately. You can pause or delete at any
               time.
             </p>
 
